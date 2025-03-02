@@ -1,0 +1,31 @@
+# config.yaml (in your project root, next to pipeline.py or wherever you prefer)
+paths:
+  data_root: "data"
+  input_folder: "${paths.data_root}/input"
+  processed_folder: "${paths.data_root}/processed"
+  output_folder: "${paths.data_root}/output"
+  input_video: "${paths.input_folder}/video_8.mp4"
+
+models:
+  whisper:
+    model_name: "large-v3-turbo"
+
+  demucs:
+    model_name: "htdemucs"
+
+  pyannote:
+    diarization_model: "pyannote/speaker-diarization-3.1"
+
+translation:
+  source_language: "AUTO"
+  target_language: "DA"
+
+preprocessing:
+  sample_rate: 44100
+  channels: 2
+  high_pass_freq: 80
+  low_pass_freq: null
+
+tts:
+  engine: "elevenlabs"
+  voice_id: "some_voice"
