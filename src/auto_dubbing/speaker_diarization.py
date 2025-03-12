@@ -34,3 +34,12 @@ def run_speaker_diarization(audio_file: str, hf_token: str,
     
     print("Diarization complete. RTTM saved to:", rttm_output)
     return diarization
+
+if __name__ == "__main__":
+    # Test the access token works
+    from dotenv import load_dotenv
+    load_dotenv()
+    hf_token = os.getenv("HF_ACCESS_TOKEN")
+    audio_file = os.path.join("data", "processed", "video_8", "extracted_audio_video_8.wav")
+    processed_path = os.path.join("data", "processed")
+    d = run_speaker_diarization(audio_file, hf_token, "processed", "video_8")
