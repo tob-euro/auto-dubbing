@@ -47,7 +47,7 @@ def main():
         video_base=video_base
     )
 
-    # align_transcript_with_diarization(transcription_result, diarization_result)
+    alignment = align_transcript_with_diarization(transcription_result, diarization_result)
     
     # Minimal summary output to the terminal.
     output_path = os.path.join(processed_folder, video_base)

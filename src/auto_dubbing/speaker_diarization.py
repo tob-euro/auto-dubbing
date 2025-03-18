@@ -1,45 +1,36 @@
-from pyannote.audio import Pipeline
+from dotenv import load_dotenv
 import os
+import json
+import assemblyai as aai
 
-def run_speaker_diarization(audio_file: str, hf_token: str,
-                            processed_folder: str, video_base: str) -> any:
-    """
-    Runs speaker diarization on the given audio file using pyannote's
-    speaker-diarization-3.1 pipeline. Saves the RTTM file directly under the video folder.
+def run_speaker_diarization(audio_file: str, assemblyai_key: str, processed_folder: str, video_base: str):
+
+    aai.settings.api_key = assemblyai_key
+    transcriber = aai.Transcriber()
+    config = aai.TranscriptionConfig(speaker_labels=True)
+    transcript = transcriber.transcribe(audio_file, config=config)
+
+    # for utterance in transcript.utterances:
+    #     print(f"Start: {utterance.start / 1000}, End: {utterance.end / 1000}, Speaker {utterance.speaker} {utterance.text}")
     
-    Args:
-        audio_file (str): Path to the audio file (vocals recommended).
-        hf_token (str): Your Hugging Face token for pyannote models.
-        processed_folder (str): Root folder for processed outputs.
-        video_base (str): Base name of the video for naming the output file.
-        
-    Returns:
-        The diarization annotation object.
-    """
-    print("Running pyannote speaker diarization pipeline...")
-    diarization_pipeline = Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1",
-        use_auth_token=hf_token
-    )
-    diarization = diarization_pipeline(audio_file)
-    
-    # Save the RTTM file directly under the video folder.
-    output_dir = os.path.join(processed_folder, video_base)
-    os.makedirs(output_dir, exist_ok=True)
-    rttm_filename = f"diarization_{video_base}.rttm"
-    rttm_output = os.path.join(output_dir, rttm_filename)
-    
-    with open(rttm_output, "w") as f:
-        diarization.write_rttm(f)
-    
-    print("Diarization complete. RTTM saved to:", rttm_output)
-    return diarization
+    return transcript
 
 if __name__ == "__main__":
-    # Test the access token works
-    from dotenv import load_dotenv
     load_dotenv()
-    hf_token = os.getenv("HF_ACCESS_TOKEN")
-    audio_file = os.path.join("data", "processed", "video_8", "extracted_audio_video_8.wav")
-    processed_path = os.path.join("data", "processed")
-    d = run_speaker_diarization(audio_file, hf_token, "processed", "video_8")
+    
+    assemblyai_key = os.getenv("ASSEMBLY_API_KEY")
+    audio_file = "data/processed/video_1/vocals_video_1.wav"
+    processed_folder = "data/processed"
+    video_base = "video_1"
+    video_output_dir = os.path.join(processed_folder, video_base)
+    
+    transcript = run_speaker_diarization(audio_file, assemblyai_key, processed_folder, video_base)
+
+    utterance_data = []
+    for utterance in transcript.utterances:
+        utterance_data.append({"Speaker": utterance.speaker, "Text": utterance.text, "Start": utterance.start, "End": utterance.end, "Confidence": utterance.confidence})
+    transcription_segments_path = os.path.join(video_output_dir, f"transcription_segments_{video_base}.json")
+    if not os.path.exists(transcription_segments_path):
+        with open(transcription_segments_path, "w", encoding="utf-8") as f:
+            json.dump(utterance_data, f, ensure_ascii=False, indent=2)
+        print(f"Transcription segments saved to: {transcription_segments_path}")

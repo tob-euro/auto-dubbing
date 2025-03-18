@@ -32,57 +32,67 @@ def main():
     
     # STEP 2: Vocal separation (if needed)
     vocals_path, background_path = separate_vocals(input_audio, processed_folder)
-    processed_vocals_path = process_vocals(vocals_path, processed_folder)
+    # processed_vocals_path = process_vocals(vocals_path, processed_folder, video_base)
     
     # STEP 3: Transcription
-    transcription_result = transcribe(
-        audio_file=input_audio,  # Use the extracted audio file
-        model_name=config.models.whisper.model_name,
+    # transcription_result = transcribe(
+    #     audio_file=processed_vocals_path,  # Use the extracted speech audio
+    #     model_name=config.models.whisper.model_name,
+    #     processed_folder=processed_folder,
+    #     video_base=video_base
+    # )
+    
+    # STEP 4: Speaker Diarization and Speaker Identification
+    assemblyai_key = os.getenv("ASSEMBLY_API_KEY")
+    transcript = run_speaker_diarization(
+        audio_file=vocals_path,
+        assemblyai_key=assemblyai_key,
         processed_folder=processed_folder,
         video_base=video_base
     )
-    
-    # Load or create transcription segments...
+    # STEP 5: Translation
+    # deepl_key = os.getenv("DEEPL_API_KEY")
+    # translated_text = translate(
+    #     text=transcription_result["text"],
+    #     source_lang=config.translation.source_language,
+    #     target_lang=config.translation.target_language,
+    #     auth_key=deepl_key,
+    #     processed_folder=processed_folder,
+    #     video_base=video_base
+    # )
+    # Save transcription segments with speaker identification to JSON file
+    utterance_data = []
+    for utterance in transcript.utterances:
+        utterance_data.append({"Speaker": utterance.speaker, "Text": utterance.text, "Start": utterance.start, "End": utterance.end, "Confidence": utterance.confidence})
     transcription_segments_path = os.path.join(video_output_dir, f"transcription_segments_{video_base}.json")
     if not os.path.exists(transcription_segments_path):
         with open(transcription_segments_path, "w", encoding="utf-8") as f:
-            import json
-            json.dump(transcription_result["segments"], f, ensure_ascii=False, indent=2)
+            json.dump(utterance_data, f, ensure_ascii=False, indent=2)
         print(f"Transcription segments saved to: {transcription_segments_path}")
-    
-    # STEP 4: Speaker Diarization
-    hf_token = os.getenv("HF_ACCESS_TOKEN")
-    diarization_result = run_speaker_diarization(
-        audio_file=input_audio,  # IMPORTANT: Use the audio file, not the video file!
-        hf_token=hf_token,
-        processed_folder=processed_folder,
-        video_base=video_base
-    )
-    
-    # STEP 5: Translation
-    deepl_key = os.getenv("DEEPL_API_KEY")
-    translated_text = translate(
-        text=transcription_result["text"],
-        source_lang=config.translation.source_language,
-        target_lang=config.translation.target_language,
-        auth_key=deepl_key,
-        processed_folder=processed_folder,
-        video_base=video_base
-    )
+
+    # hf_token = os.getenv("HF_ACCESS_TOKEN")
+    # diarization_result = run_speaker_diarization(
+    #     audio_file=processed_vocals_path,  # IMPORTANT: Use the audio file, not the video file!
+    #     hf_token=hf_token,
+    #     processed_folder=processed_folder,
+    #     video_base=video_base
+    # )
     
     # STEP 6: Alignment
-    aligned_segments = align_transcript_with_diarization(
-        whisper_result=transcription_result,
-        diarization=diarization_result,
-        translated_text=translated_text
-    )
+    # aligned_segments = align_transcript_with_diarization(
+    #     whisper_result=transcription_result,
+    #     diarization=diarization_result,
+    #     source_lang=config.translation.source_language,
+    #     target_lang=config.translation.target_language,
+    #     auth_key=deepl_key
+    # )
     
     # Save alignment output
-    alignment_output_path = os.path.join(video_output_dir, f"alignment_{video_base}.json")
-    save_alignment_to_json(aligned_segments, alignment_output_path)
+    # alignment_output_path = os.path.join(video_output_dir, f"alignment_{video_base}.json")
+    # save_alignment_to_json(aligned_segments, alignment_output_path)
     
-    print("Pipeline completed successfully.")
-    print(f"Alignment output is available in: {alignment_output_path}")
+    # print("Pipeline completed successfully.")
+    # print(f"Alignment output is available in: {alignment_output_path}")
 
 
 if __name__ == "__main__":

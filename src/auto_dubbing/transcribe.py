@@ -33,3 +33,10 @@ def transcribe(audio_file: str, model_name: str = "large-v3-turbo",
         print(f"Transcription saved to: {output_path}")
     
     return result
+
+if __name__ == "__main__":
+    # Test the transcription function
+    audio_file = os.path.join("data", "processed", "video_8", "processed_vocals_video_8.wav")
+    processed_path = os.path.join("data", "processed")
+    result = transcribe(audio_file, "large-v3-turbo", processed_path, "video_8")
+    print("Transcription result:", result["text"])

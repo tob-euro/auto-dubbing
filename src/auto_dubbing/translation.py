@@ -41,3 +41,17 @@ def translate(text: str, source_lang: str, target_lang: str, auth_key: str,
         print(f"Translation saved to: {output_path}")
     
     return translated_text
+
+if __name__ == "__main__":
+    # Test the api key works
+    from dotenv import load_dotenv
+    load_dotenv()
+    deepl_key = os.getenv("DEEPL_API_KEY")
+    test_text = "Hello, world!"
+    translated_text = translate(
+        text=test_text,
+        source_lang="AUTO",
+        target_lang="DA",
+        auth_key=deepl_key,
+    )
+    print(f"Translated text: {translated_text}")

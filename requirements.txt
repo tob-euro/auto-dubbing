@@ -8,3 +8,4 @@ noisereduce==3.0.3
 python-dotenv==1.0.1
 omegaconf==2.3.0
 demucs==4.0.1
+assemblyai==0.37.0
