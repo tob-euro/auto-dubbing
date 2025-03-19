@@ -29,17 +29,6 @@ def translate(text: str, source_lang: str, target_lang: str, auth_key: str,
     
     translated_text = result.text
     
-    # Save the translated text if output path info is provided.
-    if processed_folder and video_base:
-        # Save directly under the video folder.
-        output_dir = os.path.join(processed_folder, video_base)
-        os.makedirs(output_dir, exist_ok=True)
-        output_filename = f"translation_{video_base}.txt"
-        output_path = os.path.join(output_dir, output_filename)
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(translated_text)
-        print(f"Translation saved to: {output_path}")
-    
     return translated_text
 
 if __name__ == "__main__":

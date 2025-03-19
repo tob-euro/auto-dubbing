@@ -1,7 +1,7 @@
 from pydub import AudioSegment
 import os
 
-def split_audio_by_speaker(grouped_segments, original_audio_path, output_dir):
+def split_audio_by_speaker(utterance_data, original_audio_path, output_dir):
     """
     Splits audio into separate tracks for each speaker and saves them as separate files.
 
@@ -18,9 +18,10 @@ def split_audio_by_speaker(grouped_segments, original_audio_path, output_dir):
 
     # Dictionary to store audio for each speaker
     speaker_audio = {}
+    speaker_translated_text = {}
 
     # Iterate through utternaces and append audio to the respective speaker
-    for utterance in grouped_segments:
+    for utterance in utterance_data:
         speaker = utterance["Speaker"]
         start_time = utterance["Start"]
         end_time = utterance["End"]
@@ -28,19 +29,20 @@ def split_audio_by_speaker(grouped_segments, original_audio_path, output_dir):
         # Initialize silent audio for the speaker if not already in dictionary
         if speaker not in speaker_audio:
             speaker_audio[speaker] = AudioSegment.silent(duration=0)
+            speaker_translated_text[speaker] = ""
     
         # Slice the audio and append to the corresponding speaker
         speaker_audio[speaker] += audio[start_time:end_time]
+        speaker_translated_text[speaker] += utterance["Translated_text"]
 
     # Ensure the output directory exists
+    output_dir = os.path.join(output_dir, "speaker_audio")
     os.makedirs(output_dir, exist_ok=True)
 
     # Save the audio files for each speaker
-    for i, speaker, speaker_track in enumerate(speaker_audio.items()):
-        output_path = os.path.join(output_dir, f"speaker_{i+1}.wav")
+    for i, (speaker, speaker_track) in enumerate(speaker_audio.items()):
+        output_path = os.path.join(output_dir, f"speaker{i}.wav")
         speaker_track.export(output_path, format="wav")
         print(f"Saved {speaker} audio to: {output_path}")
     
-    speakers = len(list(speaker_audio.keys()))
-    
-    return speakers
+    return speaker_translated_text
