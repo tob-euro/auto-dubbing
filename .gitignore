@@ -1,5 +1,9 @@
 docs/site/
 
+# temp utils scripts
+yt.py
+length.py
+
 # Sensitive information
 .env
 
