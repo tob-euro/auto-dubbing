@@ -32,7 +32,7 @@ def separate_vocals(input_audio: str, processed_folder: str) -> tuple[str, str]:
 
     # Run Demucs with --out set to the video folder.
     command = [
-        "demucs",
+        "demucs",       
         "--two-stems=vocals",  # Use two-stem mode (vocals vs. background)
         "--out", output_dir,    # Write output to the video folder
         input_audio             # Input audio file

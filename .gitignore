@@ -6,6 +6,9 @@ docs/site/
 # data
 data/
 
+# baseline pipeline
+autodubbing.ipynb
+
 # test cache
 manual_test/
 
