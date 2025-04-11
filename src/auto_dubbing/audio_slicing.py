@@ -13,6 +13,7 @@ def split_audio_by_speaker(utterance_data, original_audio_path, output_dir):
     Returns:
         None
     """
+    print("Slicing audio by speaker...")
     # Load the processed vocal audio
     audio = AudioSegment.from_wav(original_audio_path)
 
@@ -29,11 +30,11 @@ def split_audio_by_speaker(utterance_data, original_audio_path, output_dir):
         # Initialize silent audio for the speaker if not already in dictionary
         if speaker not in speaker_audio:
             speaker_audio[speaker] = AudioSegment.silent(duration=0)
-            speaker_translated_text[speaker] = ""
+            speaker_translated_text[speaker] = [] #
     
         # Slice the audio and append to the corresponding speaker
         speaker_audio[speaker] += audio[start_time:end_time]
-        speaker_translated_text[speaker] += utterance["Translated_text"]
+        speaker_translated_text[speaker] += [utterance["Translated_text"]] #
 
     # Ensure the output directory exists
     output_dir = os.path.join(output_dir, "speaker_audio")

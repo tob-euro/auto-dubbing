@@ -11,7 +11,9 @@ from auto_dubbing.speaker_diarization import run_speaker_diarization
 from auto_dubbing.translation import translate
 from auto_dubbing.audio_slicing import split_audio_by_speaker
 from auto_dubbing.tts import synthesize_text
+from auto_dubbing.time_stretch import time_stretch
 from auto_dubbing.voice_conversion import run_seed_vc
+from auto_dubbing.combine import combine_audio
 
 def main():
     load_dotenv()
@@ -45,7 +47,7 @@ def main():
         processed_vocals_path = output_dir_vocals_processed
         background_path = output_dir_background
     
-    output_dir_transcription = os.path.join(video_output_dir, "transcription_{video_base}.json")
+    output_dir_transcription = os.path.join(video_output_dir, f"transcription_{video_base}.json")
     if not os.path.exists(output_dir_transcription):
         # STEP 3: Speaker Diarization and Speaker Identification
         assemblyai_key = os.getenv("ASSEMBLY_API_KEY")
@@ -83,21 +85,32 @@ def main():
     # STEP 6: Generate translated speech using tts
     tts_dir = os.path.join(video_output_dir, "speaker_tts")
     if not os.path.exists(tts_dir):
-        translated_audio_files = synthesize_text(speaker_translated_text_dict, video_output_dir)
+        translated_audio_files, durations = synthesize_text(speaker_translated_text_dict, video_output_dir)
 
     
-    # STEP 7: Apply voice conversion on translated audio files
+    # STEP 7 Time stretch tts audio to match original
+    stretched_dir = os.path.join(video_output_dir, "tts_stretched")
+    speakers_dir = os.path.join(video_output_dir, "speaker_audio")
+    if not os.path.exists(stretched_dir):
+        time_stretch(tts_dir, utterance_data, stretched_dir, durations)
+
+    
+    # STEP 8: Apply voice conversion on stretched tts audio files
     converted_files = []
-    if not os.path.exists(os.path.join(video_output_dir, "vc")):
-        os.makedirs(os.path.join(video_output_dir, "vc"), exist_ok=True)
+    vc_dir = os.path.join(video_output_dir, "vc")
+    if not os.path.exists(vc_dir):
+        os.makedirs(vc_dir, exist_ok=True)
 
         for i in range(len(list(speaker_translated_text_dict.keys()))):
-            source = os.path.join(tts_dir, f"speaker{i}.wav")
-            target = os.path.join(video_output_dir, "speaker_audio", f"speaker{i}.wav")
-            output_dir = os.path.join(video_output_dir, "vc", f"speaker{i}")
+            source = os.path.join(stretched_dir, f"speaker{i}.wav")
+            target = os.path.join(speakers_dir, f"speaker{i}.wav")
+            output_dir = os.path.join(vc_dir, f"speaker{i}")
             converted_file = run_seed_vc(source, target, output_dir)
-            converted_files.append(converted_file)           
+            converted_files.append(converted_file)          
     
+    #STEP 9: Combine converted voice segments with original background audio
+    output_dir = os.path.join("data", "output")
+    final_audio = combine_audio(vc_dir, output_dir_background, utterance_data, output_dir)
 
     
 

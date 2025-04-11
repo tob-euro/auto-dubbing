@@ -4,14 +4,11 @@ import json
 import assemblyai as aai
 
 def run_speaker_diarization(audio_file: str, assemblyai_key: str, processed_folder: str, video_base: str):
-
+    print("Running speaker diarization and transcription on audio...")
     aai.settings.api_key = assemblyai_key
     transcriber = aai.Transcriber()
     config = aai.TranscriptionConfig(speaker_labels=True)
     transcript = transcriber.transcribe(audio_file, config=config)
-
-    # for utterance in transcript.utterances:
-    #     print(f"Start: {utterance.start / 1000}, End: {utterance.end / 1000}, Speaker {utterance.speaker} {utterance.text}")
     
     return transcript
 

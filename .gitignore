@@ -6,12 +6,17 @@ length.py
 
 # Sensitive information
 .env
+dtumlops-448114-5aa70f0364ab.json
 
 # data
 data/
 
 # baseline pipeline
 autodubbing.ipynb
+
+# seed-vc repo
+seed-vc/
+checkpoints/
 
 # test cache
 manual_test/
