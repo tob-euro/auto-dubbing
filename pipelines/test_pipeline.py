@@ -14,6 +14,7 @@ from auto_dubbing.tts import synthesize_text
 from auto_dubbing.time_stretch import time_stretch
 from auto_dubbing.voice_conversion import run_seed_vc
 from auto_dubbing.combine import combine_audio
+from auto_dubbing.mix_audio_video import mix_audio_with_video
 
 def main():
     load_dotenv()
@@ -112,7 +113,11 @@ def main():
     output_dir = os.path.join("data", "output")
     final_audio = combine_audio(vc_dir, output_dir_background, utterance_data, output_dir)
 
-    
+
+    #STEP 10: Mix audio and video
+    final_audio_path = os.path.join(output_dir, "output_audio.wav")
+    output_path = os.path.join(output_dir, "video_output.mp4")
+    mix_audio_with_video(video_path, final_audio_path, output_path)
 
 
 
