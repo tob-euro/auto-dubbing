@@ -15,6 +15,7 @@ from auto_dubbing.time_stretch import time_stretch
 from auto_dubbing.voice_conversion import run_seed_vc
 from auto_dubbing.combine import combine_audio
 from auto_dubbing.mix_audio_video import mix_audio_with_video
+from auto_dubbing.mix_audio_video import mix_audio_with_video
 
 def main():
     load_dotenv()
