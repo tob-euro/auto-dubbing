@@ -14,6 +14,7 @@ from auto_dubbing.tts import synthesize_text
 from auto_dubbing.time_stretch import time_stretch
 from auto_dubbing.voice_conversion import run_seed_vc
 from auto_dubbing.combine import combine_audio
+from auto_dubbing.mix_audio_video import mix_audio_with_video
 
 def main():
     load_dotenv()
@@ -54,8 +55,6 @@ def main():
         transcript = run_speaker_diarization(
             audio_file=processed_vocals_path,
             assemblyai_key=assemblyai_key,
-            processed_folder=processed_folder,
-            video_base=video_base
         )
         # STEP 4: Translation
         # Save transcription segments (with translated text) with speaker identification to JSON file
@@ -109,8 +108,14 @@ def main():
             converted_files.append(converted_file)          
     
     #STEP 9: Combine converted voice segments with original background audio
-    output_dir = os.path.join("data", "output")
+    output_dir = os.path.join("data", "output", video_base)
     final_audio = combine_audio(vc_dir, output_dir_background, utterance_data, output_dir)
+
+    #STEP 10: Mix audio and video
+    final_audio_path = os.path.join(output_dir, "output_audio.wav")
+    output_path = os.path.join(output_dir, "video_output.mp4")
+    mix_audio_with_video(video_path, final_audio_path, output_path)
+
 
     
 

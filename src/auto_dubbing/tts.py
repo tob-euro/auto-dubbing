@@ -5,6 +5,7 @@ import os
 
 def synthesize_text(speaker_text_dict, output_dir):
     """Synthesizes speech from the input string of text."""
+    print("Synthesizing tts voices from translated transcript...")
 
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "dtumlops-448114-5aa70f0364ab.json"
     client = texttospeech.TextToSpeechClient()

@@ -4,6 +4,7 @@ import glob
 import json
 
 def combine_audio(vc_dir, background_audio_path, utterance_data, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
     final_audio = AudioSegment.from_file(background_audio_path)
     alphabet = "ABCDEFGHIJKLMNOPQRSTUVXYZ"
     speaker_dict = {}
@@ -26,7 +27,7 @@ def combine_audio(vc_dir, background_audio_path, utterance_data, output_dir):
         final_audio = final_audio.overlay(vc_segment[speaker_start:speaker_end], position=start)
 
         speaker_dict[speaker_index] = speaker_end
-    output_path = os.path.join(output_dir, "output_video.wav")
+    output_path = os.path.join(output_dir, "output_audio.wav")
     final_audio.export(output_path, format="wav")
     print(f"Final output audio saved to:" + output_path)
     return final_audio

@@ -3,7 +3,7 @@ import os
 import json
 import assemblyai as aai
 
-def run_speaker_diarization(audio_file: str, assemblyai_key: str, processed_folder: str, video_base: str):
+def run_speaker_diarization(audio_file: str, assemblyai_key: str):
     print("Running speaker diarization and transcription on audio...")
     aai.settings.api_key = assemblyai_key
     transcriber = aai.Transcriber()

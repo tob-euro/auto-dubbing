@@ -4,6 +4,8 @@ from pydub import AudioSegment
 
 
 def run_seed_vc(source, target, output_path):
+    print("Performing voice conversion...")
+
     os.makedirs(output_path, exist_ok=True)
 
     command = [

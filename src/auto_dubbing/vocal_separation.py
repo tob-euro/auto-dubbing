@@ -29,11 +29,14 @@ def separate_vocals(input_audio: str, processed_folder: str) -> tuple[str, str]:
     # Create the output folder for this video (e.g., data/processed/video_8)
     output_dir = os.path.join(processed_folder, video_base)
     os.makedirs(output_dir, exist_ok=True)
+    
+    modeltype = "mdx_extra_q"
 
     # Run Demucs with --out set to the video folder.
     command = [
-        "demucs",       
-        "--two-stems=vocals",  # Use two-stem mode (vocals vs. background)
+        "demucs",
+        "-n", modeltype,       # Use old model (not hybrid transformer)
+        "--two-stems", "vocals",  # Use two-stem mode (vocals vs. background)       
         "--out", output_dir,    # Write output to the video folder
         input_audio             # Input audio file
     ]
@@ -42,8 +45,8 @@ def separate_vocals(input_audio: str, processed_folder: str) -> tuple[str, str]:
     # Demucs creates a subfolder structure:
     #   <output_dir>/htdemucs/<folder_name>/vocals.wav
     # The folder name might be either the adjusted base or the original base.
-    candidate1 = os.path.join(output_dir, "htdemucs", adjusted_base, "vocals.wav")
-    candidate2 = os.path.join(output_dir, "htdemucs", original_base, "vocals.wav")
+    candidate1 = os.path.join(output_dir, modeltype, adjusted_base, "vocals.wav")
+    candidate2 = os.path.join(output_dir, modeltype, original_base, "vocals.wav")
 
     if os.path.exists(candidate1):
         vocals_src = candidate1
@@ -53,8 +56,8 @@ def separate_vocals(input_audio: str, processed_folder: str) -> tuple[str, str]:
         raise FileNotFoundError(f"Vocal file not found at expected locations: {candidate1} or {candidate2}")
 
     # Similarly for the background track.
-    candidate1_bg = os.path.join(output_dir, "htdemucs", adjusted_base, "no_vocals.wav")
-    candidate2_bg = os.path.join(output_dir, "htdemucs", original_base, "no_vocals.wav")
+    candidate1_bg = os.path.join(output_dir, modeltype, adjusted_base, "no_vocals.wav")
+    candidate2_bg = os.path.join(output_dir, modeltype, original_base, "no_vocals.wav")
     if os.path.exists(candidate1_bg):
         background_src = candidate1_bg
     elif os.path.exists(candidate2_bg):
@@ -79,9 +82,14 @@ def separate_vocals(input_audio: str, processed_folder: str) -> tuple[str, str]:
         background_dest = None
 
     # Remove the leftover Demucs folder (e.g., <output_dir>/htdemucs)
-    htdemucs_dir = os.path.join(output_dir, "htdemucs")
+    htdemucs_dir = os.path.join(output_dir, modeltype)
     if os.path.exists(htdemucs_dir):
         shutil.rmtree(htdemucs_dir)
         print(f"Removed temporary Demucs folder: {htdemucs_dir}")
 
     return vocals_dest, background_dest
+
+if __name__ == "__main__":
+    processed_folder = os.path.join("data", "processed")
+    input_audio = os.path.join(processed_folder, "video_8", "extracted_audio_video_8.wav")
+    vocals_path, background_path = separate_vocals(input_audio=input_audio, processed_folder=processed_folder)
