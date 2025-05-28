@@ -13,6 +13,7 @@ data/
 
 # baseline pipeline
 autodubbing.ipynb
+whisper.ipynb
 
 # seed-vc repo
 seed-vc/

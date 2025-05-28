@@ -10,7 +10,9 @@ def time_stretch(tts_dir, utterance_data, output_dir, durations):
     speaker_dict = {}
     tts_stretched = {}
     tts_current_time = {}
-    durations_stretched = []
+    #Create list of empty lists - one for each speaker
+    # durations_stretched = [[] for i in range(len(set([utt['Speaker'] for utt in utterance_data])))]
+    durations_stretched = {}
     temp_tts_dir = os.path.join(output_dir, "temp")
     os.makedirs(temp_tts_dir, exist_ok=True)
 
@@ -23,7 +25,7 @@ def time_stretch(tts_dir, utterance_data, output_dir, durations):
             tts_stretched[speaker_index] = AudioSegment.silent(duration=0)
             speaker_dict[speaker_index] = 0
             tts_current_time[speaker_index] = 0
-            durations_stretched += [[]]
+            durations_stretched[speaker_index] = []
         
 
         tts_path = os.path.join(tts_dir, f"speaker{speaker_index}.wav")
@@ -61,11 +63,11 @@ def time_stretch(tts_dir, utterance_data, output_dir, durations):
 
 if __name__ == "__main__":
     print("Testing time stretching...")
-    video_output_dir = os.path.join("data", "processed", "video_6")
+    video_output_dir = os.path.join("data", "processed", "video_3")
     original_dir = os.path.join(video_output_dir, "speaker_audio")
     tts_dir = os.path.join(video_output_dir, "speaker_tts")
     output_dir = os.path.join(video_output_dir, "tts_stretched")
-    with open(os.path.join(video_output_dir, "transcription_video_6.json"), "r", encoding="utf-8") as f:
+    with open(os.path.join(video_output_dir, "transcription_video_3.json"), "r", encoding="utf-8") as f:
         utterance_data = json.load(f)
-    durations = [[5592, 2280, 5376, 3504, 528, 6408], [672, 696, 5424, 1320, 1128]]
+    durations = [[720, 4536, 1080, 2040, 3144, 2424, 3048, 2640, 2112, 5424, 4296, 1728, 1896], [624, 3768, 1824, 1080, 4152, 16224, 3072, 1776, 2592, 5952, 744, 4008]]
     time_stretch(tts_dir, utterance_data, output_dir, durations)
