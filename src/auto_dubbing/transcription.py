@@ -123,10 +123,11 @@ def align_speaker_labels(whisper_path: str, diarization_path: str, output_dir: s
     aligned = []
     discarded = 0
 
-    for w_seg in whisper_segments:
+    for w_index, w_seg in enumerate(whisper_segments):
         w_start, w_end = w_seg["start"], w_seg["end"]
         max_overlap = 0
         best_speaker = None
+        best_a_seg = None
 
         for a_seg in diarization_segments:
             a_start, a_end = a_seg["Start"], a_seg["End"]
@@ -134,10 +135,12 @@ def align_speaker_labels(whisper_path: str, diarization_path: str, output_dir: s
             if overlap > max_overlap:
                 max_overlap = overlap
                 best_speaker = a_seg["Speaker"]
+                best_a_seg = a_seg
 
-        if best_speaker:
+        if best_speaker and best_a_seg:
+            true_start = best_a_seg["Start"] if len(aligned) == 0 else w_start
             aligned.append({
-                "start": w_start,
+                "start": true_start,
                 "end": w_end,
                 "speaker": best_speaker,
                 "text": w_seg["text"]
