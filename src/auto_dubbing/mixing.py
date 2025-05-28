@@ -1,0 +1,202 @@
+import os
+import subprocess
+import shutil
+import glob
+import logging
+import json
+from pydub import AudioSegment
+
+logger = logging.getLogger(__name__)
+
+def extract_audio(input_video: str, output_dir: str) -> str:
+    """
+    Extracts audio from a video file using ffmpeg and writes it as a WAV.
+
+    Args:
+        input_video: Path to the source video (mp4, mov, etc.).
+        output_dir:  Directory where the extracted WAV will be written.
+
+    Returns:
+        The full path to the extracted WAV file.
+    """
+    # Build output path
+    video_name     = os.path.splitext(os.path.basename(input_video))[0]
+    output_audio   = os.path.join(output_dir, f"extracted_audio.wav")
+
+    logger.info("Extracting audio from %s → %s", input_video, output_audio)
+
+    # Build and run ffmpeg command
+    cmd = [
+        "ffmpeg",
+        "-y",                    # overwrite
+        "-loglevel", "error",    # only show errors
+        "-i", input_video,       # input file
+        "-vn",                   # no video
+        "-acodec", "pcm_s16le",  # PCM 16-bit little-endian
+        "-ar", "44100",          # 44.1 kHz sampling
+        "-ac", "2",              # stereo
+        output_audio
+    ]
+    subprocess.run(cmd, check=True)
+
+    logger.info("Audio successfully extracted to %s", output_audio)
+    return output_audio
+
+def separate_vocals(input_audio: str, output_dir: str, model: str = "mdx_extra_q") -> tuple[str, str]:
+    """
+    Separate a waveform into vocals and background audio using Demucs (2-stem mode),
+    then move the two resulting WAVs into:
+        {output_dir}/separated/vocals.wav
+        {output_dir}/separated/background.wav
+
+    Args:
+        input_audio: Path to the source WAV file.
+        output_dir:  Base directory for processed outputs.
+        model:       Demucs model name (defaults to "mdx_extra_q").
+
+    Returns:
+        A 2-tuple of (vocals_path, background_path).
+    """
+    logger.info("Running Demucs model %r on %s", model, input_audio)
+
+    # Build and run Demucs command
+    cmd = [
+        "demucs",
+        "-n", model,
+        "--two-stems=vocals",
+        "--out", output_dir,
+        input_audio
+    ]
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # Locate the temporary model folder
+    model_dir = os.path.join(output_dir, model)
+
+    # Glob for the two stems and pick the first match
+    vocals_src     = glob.glob(os.path.join(model_dir, "**", "vocals.wav"),     recursive=True)[0]
+    background_src = glob.glob(os.path.join(model_dir, "**", "no_vocals.wav"), recursive=True)[0]
+
+    # Prepare the separated folder
+    sep_dir = os.path.join(output_dir, "separated_audio")
+    os.makedirs(sep_dir, exist_ok=True)
+    vocals_path     = os.path.join(sep_dir, "vocals.wav")
+    background_path = os.path.join(sep_dir, "background.wav")
+
+    # Move them out
+    shutil.move(vocals_src,     vocals_path)
+    shutil.move(background_src, background_path)
+    logger.info("Saved vocal audio to %s", vocals_path)
+    logger.info("Saved background audio to %s", background_path)
+
+    # Clean up temp model folder
+    shutil.rmtree(model_dir, ignore_errors=True)
+    logger.debug("Removed temporary folder %s", model_dir)
+
+    return vocals_path, background_path
+
+
+def combine_audio(base_dir: str, background_audio_path: str, transcript_path: str) -> str:
+    """
+    Overlays voice-converted clips onto the background track and writes the final mix.
+
+    Args:
+        base_dir:               Root processed folder (e.g. data/processed/video_5).
+                                The final mix will be written here.
+        background_audio_path:  Path to your background WAV.
+        transcript_path:        Full path to the transcript JSON.
+
+    Returns:
+        The full path to the final mixed WAV file.
+    """
+    logger.info("Starting audio combination…")
+
+    # 1) Load transcript
+    if not os.path.isfile(transcript_path):
+        raise FileNotFoundError(f"Transcript not found: {transcript_path}")
+    with open(transcript_path, "r", encoding="utf-8") as f:
+        transcript = json.load(f)
+
+    # 2) Load background track
+    final_audio = AudioSegment.from_file(background_audio_path)
+    os.makedirs(base_dir, exist_ok=True)
+
+    # 3) Overlay each VC clip
+    speaker_counts: dict[str, int] = {}
+    for utt in transcript:
+        speaker   = utt["speaker"]
+        start = int(utt["start"] * 1000)
+        duration = int((utt["end"] - utt["start"]) * 1000)
+
+        speaker_counts[speaker] = speaker_counts.get(speaker, 0) + 1
+        idx = speaker_counts[speaker]
+
+        vc_path = os.path.join(
+            base_dir,
+            "speaker_audio",
+            f"speaker_{speaker}",
+            "tts_vc",
+            f"{speaker}_utt_{idx:02d}_vc.wav"
+        )
+
+        if not os.path.isfile(vc_path):
+            logger.warning("Missing VC clip %s, skipping…", vc_path)
+            continue
+
+        clip = AudioSegment.from_file(vc_path)[:duration]
+        final_audio = final_audio.overlay(clip, position=start)
+
+    # 4) Export final mix
+    output_wav = os.path.join(base_dir, "final_mix.wav")
+    final_audio.export(output_wav, format="wav")
+    logger.info("Final mix → %s", output_wav)
+
+    return output_wav
+
+def mix_audio_with_video(video_path: str, audio_path: str, output_video_path: str) -> str:
+    """
+    Replaces the audio track in `video_path` with `audio_path` using ffmpeg,
+    writing the result to `output_video_path`.
+
+    Args:
+        video_path:         Path to the source video (mp4, mov, etc.).
+        audio_path:         Path to the WAV audio to overlay.
+        output_video_path:  Where to write the final dubbed video.
+
+    Returns:
+        The full path to the dubbed video file.
+    """
+    # Sanity checks
+    if not os.path.isfile(video_path):
+        raise FileNotFoundError(f"Source video not found: {video_path}")
+    if not os.path.isfile(audio_path):
+        raise FileNotFoundError(f"Audio mix not found: {audio_path}")
+
+    logger.info(
+        "Mixing audio %s into video %s → %s",
+        os.path.basename(audio_path),
+        os.path.basename(video_path),
+        output_video_path,
+    )
+
+    # Ensure output directory exists
+    os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
+
+    # Build and run ffmpeg command
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",          # don’t show the initial banner/config dump
+        "-loglevel", "error",    # only show actual errors
+        "-y",                    # overwrite output without asking
+        "-i", video_path,        # input video
+        "-i", audio_path,        # input audio
+        "-c:v", "copy",          # copy video stream
+        "-c:a", "aac",           # encode audio as AAC
+        "-map", "0:v:0",         # select video from first input
+        "-map", "1:a:0",         # select audio from second input
+        "-shortest",             # finish when the shorter stream ends
+        output_video_path
+    ]
+    subprocess.run(cmd, check=True)
+
+    logger.info("Dubbed video saved to %s", output_video_path)
+    return output_video_path

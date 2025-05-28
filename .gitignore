@@ -1,11 +1,12 @@
 docs/site/
 
-# temp utils scripts
-yt.py
-length.py
+# Seed-vc folder
+checkpoints
+external
 
 # Sensitive information
 .env
+gcp_key.json
 
 # data
 data/

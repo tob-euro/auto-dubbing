@@ -1,47 +1,34 @@
-from pydub import AudioSegment, effects
-import numpy as np
-import noisereduce as nr
 import os
+import logging
+from pydub import AudioSegment, effects
 
-def process_vocals(vocals_path: str, processed_folder: str, video_base: str) -> str:
+logger = logging.getLogger(__name__)
+
+def process_vocals(vocals_path: str, output_dir: str) -> str:
     """
-    Applies general-purpose preprocessing to the isolated vocals track to improve clarity,
-    without removing the character of the voice. This function:
-      1. Normalizes loudness.
-      2. Applies a mild high-pass filter (to remove low-frequency rumble).
-      3. Optionally runs a simple noise reduction if 'noisereduce' is installed.
+    Preprocess the isolated vocals by normalizing loudness and applying
+    a high-pass filter and a low-pass filter.
 
-    Returns a path to the processed vocals file stored in a dedicated folder.
+    Args:
+        vocals_path: Path to the input vocals WAV.
+        output_dir:  Directory where the processed file will be written.
+
+    Returns:
+        Path to the processed vocals WAV.
     """
-    print("Preprocessing vocals for clarity...")
+    logger.info("processing vocals from %s", vocals_path)
 
-    # Load the vocals file
-    vocal_segment = AudioSegment.from_file(vocals_path)
+    # Load and normalize vocals
+    vocals = AudioSegment.from_file(vocals_path)
+    vocals = effects.normalize(vocals)
 
-    # --- Step 1: Loudness Normalization ---
-    # This ensures consistent average volume.
-    normalized_vocals = effects.normalize(vocal_segment)
+    # Apply filters
+    vocals = vocals.high_pass_filter(70)
+    vocals = vocals.low_pass_filter(16_000)
 
-    # --- Step 2: Gentle High-Pass Filter (e.g., around 80Hz) ---
-    # This helps remove rumble and sub-bass noise without affecting typical speech frequencies.
-    # pydub’s high_pass_filter is in Hz, so passing 80 filters out frequencies below ~80Hz.
-    filtered_vocals = normalized_vocals.high_pass_filter(70)
+    # Export
+    processed_vocals_path = os.path.join(output_dir, "processed_vocals.wav")
+    vocals.export(processed_vocals_path, format="wav")
 
-    # (Optional) mild low-pass filter if your audio has high-frequency noise
-    filtered_vocals = filtered_vocals.low_pass_filter(16000)
-
-    # We derive the video base from the directory two levels up.
-    output_dir = os.path.join(processed_folder, video_base)
-    os.makedirs(output_dir, exist_ok=True)
-    output_filename = f"processed_vocals_{video_base}.wav"
-    processed_vocals_path = os.path.join(output_dir, output_filename)
-
-    filtered_vocals.export(processed_vocals_path, format="wav")
-
-    print(f"Preprocessed vocals saved at: {processed_vocals_path}")
+    logger.info("Processed vocals saved to %s", processed_vocals_path)
     return processed_vocals_path
-
-if __name__ == "__main__":
-    # Test correct output directory
-    output_dir = process_vocals("data/processed/video_6/vocals_video_6.wav", "data/processed", "video_6")
-    print(f"Output directory: {output_dir}")
