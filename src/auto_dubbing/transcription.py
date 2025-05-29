@@ -2,11 +2,10 @@ import os
 import json
 import logging
 from pathlib import Path
-from typing import List, Dict
-import whisper
-import assemblyai as aai
 import time
 import deepl
+import whisper
+import assemblyai as aai
 
 
 # Silence httpx and assemblyai logs
@@ -33,8 +32,9 @@ def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3-t
     """
     logger.info("Starting Whisper transcription on %s", audio_path)
     model = whisper.load_model(model_name)
-
     result = model.transcribe(str(audio_path), verbose=False)
+
+    language_code = result["language"]
 
     transcription = [
         {
@@ -45,13 +45,14 @@ def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3-t
         for seg in result["segments"]
     ]
 
-    # Save the transcription JSON
     output_path = output_dir / "whisper.json"
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(transcription, f, ensure_ascii=False, indent=2)
 
     logger.info("Whisper transcription saved to %s", output_path)
-    return str(output_path)
+    logger.info("Detected language: %s", language_code)
+
+    return str(output_path), language_code
 
 
 def speaker_diarization(audio_file: str, auth_key: str, output_dir: str) -> tuple[str, str | None]:
@@ -85,18 +86,14 @@ def speaker_diarization(audio_file: str, auth_key: str, output_dir: str) -> tupl
             "End": round(utterance.end / 1000, 3),
         })
 
-    # Save the detected language code
-    detected_language = diarization.json_response["language_code"]
-
     # Save the speaker diarization JSON
     diarization_path = os.path.join(output_dir, "diarization.json")
     with open(diarization_path, "w", encoding="utf-8") as f:
         json.dump(utterance_data, f, ensure_ascii=False, indent=2)
 
     logger.info("Saved diarization to %s", diarization_path)
-    logger.info("Detected language: %s", detected_language)
 
-    return str(diarization_path), detected_language
+    return str(diarization_path)
 
 
 def align_speaker_labels(whisper_path: str, diarization_path: str, output_dir: str) -> str:
@@ -162,26 +159,15 @@ def align_speaker_labels(whisper_path: str, diarization_path: str, output_dir: s
     return str(transcript_path)
 
 
-# Map AssemblyAI language codes to DeepL codes
-ASSEMBLYAI_TO_DEEPL = {
-    "en":    "EN", "en_uk": "EN", "en_us": "EN", "en_au": "EN",
-    "es":    "ES", "fr":    "FR", "it":    "IT", "de":    "DE",
-    "pt":    "PT", "nl":    "NL", "ja":    "JA", "fi":    "FI",
-    "zh":    "ZH", "ko":    "KO", "pl":    "PL", "tr":    "TR",
-    "ru":    "RU", "uk":    "UK"
-}
-
 def translate(transcript_path: str, source_language: str, target_language: str, auth_key: str) -> None:
     """
-    Translate each utterance in a transcription JSON in-place using DeepL.
-
-    The JSON at `transcript_path` must be a list of dicts containing at least
-    a "text" field. This function adds/overwrites "translation" on each entry.
+    Translate each utterance in a transcription JSON in-place using DeepL. Queries the DeepL API
+    with exponential backoff in case of rate limits. Writes the updated JSON back to the same file.
 
     Args:
         transcript_path:    Path to transcription JSON (list of utterance dicts).
         source_language:    DeepL source language code (e.g. "EN").
-        target_language:    DeepL target language code (e.g. "DE").
+        target_language:    DeepL target language code (e.g. "DK").
         auth_key:           DeepL API authentication key.
     """
     logger.info("Translating %s from %s → %s via DeepL", transcript_path, source_language, target_language)    
@@ -198,7 +184,7 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
             continue
 
         max_retries = 5
-        delay = 1  # initial delay in seconds
+        delay = 1  # delay in seconds
 
         for attempt in range(max_retries):
             try:
@@ -221,3 +207,19 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
         json.dump(transcript, f, ensure_ascii=False, indent=2)
     
     logger.info("Updated transcription with translations at %s", transcript_path)
+
+def main() -> None:
+    """
+    Main function to run the transcription pipeline.
+    This is a placeholder for where you would integrate this into a larger pipeline.
+    """
+    # Example usage
+    audio_path = Path("data/input/test.mp4")
+    output_dir = Path("data/processed/test")
+    
+    # Transcribe audio
+    transcribe(audio_path, output_dir)
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    main()

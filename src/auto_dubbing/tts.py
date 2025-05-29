@@ -4,7 +4,6 @@ import logging
 import shutil
 import subprocess
 from io import BytesIO
-from dotenv import load_dotenv
 from google.cloud import texttospeech
 from pydub import AudioSegment
 from audiostretchy.stretch import stretch_audio
@@ -12,13 +11,13 @@ from pydub import AudioSegment
 
 logger = logging.getLogger(__name__)
 
-def synthesize_utterance_audio(transcript_path: str, output_dir: str, language_code: str = "da-DK",voice_name: str = "da-DK-Neural2-D", gender: texttospeech.SsmlVoiceGender = texttospeech.SsmlVoiceGender.FEMALE):
+def tts(transcript_path: str, output_dir: str, language_code: str = "da-DK",voice_name: str = "da-DK-Neural2-D", gender: texttospeech.SsmlVoiceGender = texttospeech.SsmlVoiceGender.FEMALE):
     """
     Read a transcription JSON and synthesize each utterance to a WAV.
 
     For each utterance dict in the top-level JSON list (must contain
-    "Speaker" and "Translated_text"), writes:
-        [output_dir]/speaker_audio/speaker_{Speaker}/tts_raw/{Speaker}_utt_{XX}.wav
+    "speaker" and "translation"), writes:
+        [output_dir]/speaker_audio/speaker_{speaker}/tts_raw/{speaker}_utt_{XX}.wav
 
     Args:
         transcript_path: Path to transcription JSON.
@@ -32,10 +31,11 @@ def synthesize_utterance_audio(transcript_path: str, output_dir: str, language_c
     """
     logger.info("Loading transcript from %s", transcript_path)
 
-    # 1) Load JSON
+    # Load JSON
     with open(transcript_path, "r", encoding="utf-8") as f:
         transcript = json.load(f)
 
+    # Check if google credentials are set
     creds = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     if not creds or not os.path.isfile(creds):
         raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS must point to your GCP JSON key")
@@ -50,23 +50,22 @@ def synthesize_utterance_audio(transcript_path: str, output_dir: str, language_c
     )
     audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
 
-    # 3) Synthesize per utterance
-    speaker_counts: dict[str, int]        = {}
+    # Synthesize per utterance
+    speaker_counts: dict[str, int] = {}
     speaker_outputs: dict[str, list[str]] = {}
 
     logger.info("Starting TTS synthesis for %d utterances", len(transcript))
 
     for utterance in transcript:
-        speaker_id  = utterance["speaker"]
+        speaker_id = utterance["speaker"]
         text = utterance["translation"]
 
         speaker_counts[speaker_id] = speaker_counts.get(speaker_id, 0) + 1
         idx = speaker_counts[speaker_id]
 
         # Synthesize
-        logger.debug("Synthesizing speaker %s utt %02d", speaker_id, idx)
         input_msg = texttospeech.SynthesisInput(text=text)
-        response  = client.synthesize_speech(
+        response = client.synthesize_speech(
             request={"input": input_msg, "voice": voice, "audio_config": audio_config}
         )
         audio_seg = AudioSegment.from_mp3(BytesIO(response.audio_content))

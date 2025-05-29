@@ -4,6 +4,7 @@ import shutil
 import glob
 import logging
 import json
+from pathlib import Path
 from pydub import AudioSegment
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,79 @@ def separate_vocals(input_audio: str, output_dir: str, model: str = "mdx_extra_q
 
     return vocals_path, background_path
 
+
+def mix_background_audio(
+    transcript_path: str,
+    extracted_audio_path: str,
+    demucs_background_path: str,
+    output_dir: str,
+    crossfade_duration_ms: int = 500
+) -> str:
+    """
+    Mixes background audio with original audio track using dialogue timing from transcript.
+
+    Args:
+        transcript_path: Path to transcript JSON.
+        extracted_audio_path: Full audio extracted from the original video.
+        demucs_background_path: Background audio extracted by Demucs.
+        output_dir: Path to write the mixed enhanced background audio.
+        crossfade_duration_ms: Duration in ms for crossfades between segments.
+    
+    Returns:
+        Path to the saved enhanced background audio.
+    """
+
+    # Load transcript
+    with open(transcript_path, "r") as f:
+        transcript = json.load(f)
+
+    # Load audio using pydub
+    orig_audio = AudioSegment.from_file(extracted_audio_path)
+    bg_audio = AudioSegment.from_file(demucs_background_path)
+    duration_ms = len(orig_audio)
+
+    # Build result
+    result = AudioSegment.empty()
+    last_end_ms = 0
+
+    for entry in transcript:
+        start_ms = int(entry["start"] * 1000)
+        end_ms = int(entry["end"] * 1000)
+
+        if end_ms > duration_ms:
+            end_ms = duration_ms
+        if start_ms >= end_ms:
+            continue
+
+        # Add non-dialogue part from original audio
+        if start_ms > last_end_ms:
+            orig_segment = orig_audio[last_end_ms:start_ms]
+            if len(result) > 0 and len(orig_segment) >= crossfade_duration_ms and len(result) >= crossfade_duration_ms:
+                result = result.append(orig_segment, crossfade=crossfade_duration_ms)
+            else:
+                result += orig_segment
+
+        # Add demucs background with fade
+        bg_segment = bg_audio[start_ms:end_ms].fade_in(crossfade_duration_ms).fade_out(crossfade_duration_ms)
+        if len(result) > 0 and len(bg_segment) >= crossfade_duration_ms and len(result) >= crossfade_duration_ms:
+            result = result.append(bg_segment, crossfade=crossfade_duration_ms)
+        else:
+            result += bg_segment
+
+        last_end_ms = end_ms
+
+    # Append tail if any
+    if last_end_ms < duration_ms:
+        tail = orig_audio[last_end_ms:]
+        if len(result) > 0 and len(tail) >= crossfade_duration_ms and len(result) >= crossfade_duration_ms:
+            result = result.append(tail, crossfade=crossfade_duration_ms)
+        else:
+            result += tail
+
+    # Save final result
+    output_path = Path(output_dir) / "background_mix.wav"
+    result.export(output_path, format="wav")
+    return str(output_path)
 
 def combine_audio(base_dir: str, background_audio_path: str, transcript_path: str) -> str:
     """
