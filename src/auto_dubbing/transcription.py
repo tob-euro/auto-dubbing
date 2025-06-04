@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import warnings
 from pathlib import Path
 import time
 import deepl
@@ -13,6 +14,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("assemblyai").setLevel(logging.WARNING)
 # Silence DeepL client
 logging.getLogger("deepl").setLevel(logging.WARNING)
+
+# Suppress specific warnings from stable-whisper
+warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
+os.environ["KMP_WARNINGS"] = "FALSE"
 
 # Create logger
 logger = logging.getLogger(__name__)
@@ -32,15 +37,28 @@ def transcribe(audio_path: Path, output_dir: Path) -> str:
     """
     logger.info("Starting Whisper transcription on %s", audio_path)
 
+    # setup model
     model = stable_whisper.load_model("large-v3")
+
+    # Run word-leveltranscription
     result = model.transcribe(
         str(audio_path),
         suppress_silence=True,
         vad=True,
-        regroup=False
+        regroup=False,
+        verbose=None
     )
-    model.refine(str(audio_path), result, precision=0.02, word_level=True)
 
+    # Refine word-level timestamps
+    model.refine(
+        str(audio_path),
+        result,
+        word_level=True,
+        precision=0.02,
+        verbose=None
+    )
+
+    # Convert to segment-level transcription
     (
         result
         .ignore_special_periods()
@@ -49,9 +67,12 @@ def transcribe(audio_path: Path, output_dir: Path) -> str:
         .split_by_gap(.5)
         .clamp_max()
     )
+    result.convert_to_segment_level().adjust_gaps()
 
+    # Save detected language
     language_code = result.language
 
+    # Convert segments to a list of dictionaries
     transcription = [
         {
             "start": round(seg.start, 2),
@@ -61,7 +82,8 @@ def transcribe(audio_path: Path, output_dir: Path) -> str:
         for seg in result.segments
     ]
 
-    output_path = output_dir / "whisper_ts.json"
+    # Write JSON output to output directory
+    output_path = output_dir / "whisper.json"
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(transcription, f, ensure_ascii=False, indent=2)
 
@@ -168,10 +190,6 @@ def align_speaker_labels(whisper_path: str, diarization_path: str, output_dir: s
     logger.info("Final transcript saved to %s", transcript_path)
     logger.info("Discarded %d non-overlapping Whisper segments", discarded)
 
-    # Clean up intermediate files
-    #Path(whisper_path).unlink(missing_ok=True)
-    #Path(diarization_path).unlink(missing_ok=True)
-
     return str(transcript_path)
 
 
@@ -223,16 +241,3 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
         json.dump(transcript, f, ensure_ascii=False, indent=2)
     
     logger.info("Updated transcription with translations at %s", transcript_path)
-
-# main file to test transcribe function
-def main():
-    # Example usage
-    vocals = Path("data/processed/video_22/processed_vocals.wav")
-    output_dir = Path("data/processed/video_22")
-    model_name = "large-v3"
-
-    # Transcribe the audio
-    transcribe(vocals, output_dir, model_name)
-
-if __name__ == "__main__":
-    main()

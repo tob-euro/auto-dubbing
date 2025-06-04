@@ -10,17 +10,14 @@ from audiostretchy.stretch import stretch_audio
 
 logger = logging.getLogger(__name__)
 
+
 def tts(transcript_path: str, output_dir: str, language_code: str = "da-DK",voice_name: str = "da-DK-Neural2-D", gender: texttospeech.SsmlVoiceGender = texttospeech.SsmlVoiceGender.FEMALE):
     """
     Read a transcription JSON and synthesize each utterance to a WAV.
 
-    For each utterance dict in the top-level JSON list (must contain
-    "speaker" and "translation"), writes:
-        [output_dir]/speaker_audio/speaker_{speaker}/tts_raw/{speaker}_utt_{XX}.wav
-
     Args:
         transcript_path: Path to transcription JSON.
-        output_dir:      Base folder where speaker_{X}/tts_raw/ lives.
+        output_dir:      Base folder where speaker_{X}/tts/ lives.
         language_code:   Language code for TTS (defaults to Danish).
         voice_name:      Specific Google voice name.
         gender:          SSML gender selection.
@@ -51,7 +48,6 @@ def tts(transcript_path: str, output_dir: str, language_code: str = "da-DK",voic
 
     # Synthesize per utterance
     speaker_counts: dict[str, int] = {}
-    speaker_outputs: dict[str, list[str]] = {}
 
     logger.info("Starting TTS synthesis for %d utterances", len(transcript))
 
@@ -70,40 +66,22 @@ def tts(transcript_path: str, output_dir: str, language_code: str = "da-DK",voic
         audio_seg = AudioSegment.from_mp3(BytesIO(response.audio_content))
 
         # Write out
-        speaker_dir = os.path.join(output_dir, "speaker_audio", f"speaker_{speaker_id}", "tts_raw")
+        speaker_dir = os.path.join(output_dir, "speaker_audio", f"speaker_{speaker_id}", "tts")
         os.makedirs(speaker_dir, exist_ok=True)
         filename = f"{speaker_id}_utt_{idx:02d}.wav"
         out_path = os.path.join(speaker_dir, filename)
         audio_seg.export(out_path, format="wav")
 
-        speaker_outputs.setdefault(speaker_id, []).append(out_path)
-
     logger.info("TTS synthesis complete for %d utterances", len(transcript))
-    return speaker_outputs
 
 
 def time_stretch_tts(base_dir: str, transcript_path: str):
     """
     Time-stretch your TTS utterances so they match the original utterance timings.
 
-    Expects this layout before you call it:
-
-        {base_dir}/transcript.json
-        {base_dir}/speaker_audio/speaker_{spk}/tts_raw/{spk}_utt_{XX}.wav
-
-    It will produce:
-
-        {base_dir}/speaker_audio/speaker_{spk}/tts_stretched/{spk}_utt_{XX}_stretched.wav
-
     Args:
         base_dir:        Root of your “processed/video_X” folder.
-        transcript_path: Full path to transcript.json, a list of dicts
-                         with keys “Speaker”, “Start”, “End”.
-        output_dir:      (unused) kept for signature consistency
-
-    Returns:
-        A dict mapping each speaker label (e.g. "A") → list of
-        final durations (ms) of the stretched files.
+        transcript_path: Full path to transcript.json.
     """
     logger.info("Time-stretching TTS utterances")
 
@@ -116,19 +94,17 @@ def time_stretch_tts(base_dir: str, transcript_path: str):
     for utterance in transcript:
         by_speaker.setdefault(utterance["speaker"], []).append(utterance)
 
-    results: dict[str, list[int]] = {}
     for speaker_id, utts in by_speaker.items():
         logger.info("Processing speaker %s (%d utterances)", speaker_id, len(utts))
 
         # Correct paths under speaker_audio/
-        raw_dir       = os.path.join(base_dir, "speaker_audio", f"speaker_{speaker_id}", "tts_raw")
+        tts_dir       = os.path.join(base_dir, "speaker_audio", f"speaker_{speaker_id}", "tts")
         stretched_dir = os.path.join(base_dir, "speaker_audio", f"speaker_{speaker_id}", "tts_stretched")
         os.makedirs(stretched_dir, exist_ok=True)
 
-        durations: list[int] = []
         for idx, utterance in enumerate(utts, start=1):
             target_ms = int((utterance["end"] - utterance["start"]) * 1000)
-            src_path  = os.path.join(raw_dir, f"{speaker_id}_utt_{idx:02d}.wav")
+            src_path  = os.path.join(tts_dir, f"{speaker_id}_utt_{idx:02d}.wav")
             out_path  = os.path.join(stretched_dir, f"{speaker_id}_utt_{idx:02d}_stretched.wav")
 
             # load original to compute ratio
@@ -140,13 +116,7 @@ def time_stretch_tts(base_dir: str, transcript_path: str):
             stretched = AudioSegment.from_file(out_path)[:target_ms]
             stretched.export(out_path, format="wav")
 
-            got_ms = len(stretched)
-            durations.append(got_ms)
-
-        results[speaker_id] = durations
-
-    logger.info("Time-stretching complete for %d speakers", len(results))
-    return results
+    logger.info("Time-stretching complete for %d speakers", len(by_speaker))
 
 
 def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir: str):
@@ -156,9 +126,7 @@ def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir:
     Args:
         transcript_path: Path to the JSON file containing utterances.
         vocals_path:     Path to the vocals WAV.
-
-    Returns:
-        A dict mapping speaker ID → list of utterance WAV paths.
+        output_dir:      Directory where speaker_audio/speaker_{X}/utterances/ will be created.
     """
     logger.info("Splitting audio by utterances")
 
@@ -169,7 +137,6 @@ def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir:
     speaker_root = os.path.join(output_dir, "speaker_audio")
     os.makedirs(speaker_root, exist_ok=True)
 
-    speaker_utterances: dict[str, list[str]] = {}
     speaker_counts: dict[str, int] = {}
 
     for utterance in transcript:
@@ -189,18 +156,14 @@ def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir:
         out_path = os.path.join(speaker_dir, filename)
         seg.export(out_path, format="wav")
 
-        speaker_utterances.setdefault(speaker_id, []).append(out_path)
         logger.info("  Saved utterance %d for speaker %s → %s", utt_idx, speaker_id, out_path)
 
-    logger.info("Finished splitting %d utterances across %d speakers", len(transcript), len(speaker_utterances))
-    return speaker_utterances
+    logger.info("Finished splitting %d utterances across speakers", len(transcript))
 
 
 def build_all_reference_audios(base_dir: str, reference_window: int = 1):
     """
     Build all reference audios for each utterance using a window of neighboring utterances.
-    Saves them under:
-        speaker_audio/speaker_{X}/references/{X}_utt_{XX}_ref.wav
 
     Args:
         base_dir: Root directory containing speaker_audio folders.
@@ -255,7 +218,6 @@ def build_all_reference_audios(base_dir: str, reference_window: int = 1):
             logger.info("Built reference for %s → %s", utt_id, ref_out_path)
 
     logger.info("Finished building reference audio.")
-
 
 
 def voice_conversion(source: str, target: str, output_dir: str):
