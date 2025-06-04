@@ -62,34 +62,34 @@ def run_pipeline() -> None:
     video_path, base_dir, output_folder = prepare_paths(config)
 
     # 1) Extract & separate
-    audio_file = extract_audio(video_path, base_dir)
+    audio_file = extract_audio(str(video_path), base_dir)
     vocals, background = separate_vocals(audio_file, base_dir)
-    # vocals = process_vocals(vocals, base_dir)
+    vocals = process_vocals(vocals, base_dir)
 
     # 2) Transcribe & translate
-    whisper_path = transcribe(vocals, base_dir)
-    diarization_path, src_lang = speaker_diarization(str(vocals), assembly_key, str(base_dir))
-    transcript_path = align_speaker_labels(whisper_path, diarization_path, str(base_dir))
+    # whisper_path = transcribe(vocals, base_dir)
+    # diarization_path, src_lang = speaker_diarization(str(vocals), assembly_key, str(base_dir))
+    # transcript_path = align_speaker_labels(whisper_path, diarization_path, str(base_dir))
 
-    translate(
-        transcript_path,
-        ASSEMBLYAI_TO_DEEPL.get(src_lang.lower(), "AUTO"),
-        target_lang,
-        deepl_key
-    )
+    # translate(
+    #     transcript_path,
+    #     ASSEMBLYAI_TO_DEEPL.get(src_lang.lower(), "AUTO"),
+    #     target_lang,
+    #     deepl_key
+    # )
 
-    # 3) Slice, TTS, stretch, voice conversion
-    split_audio_by_speaker(transcript_path, vocals, base_dir)
-    synthesize_utterance_audio(transcript_path, base_dir)
-    time_stretch_tts(base_dir, transcript_path)
-    voice_conversion_for_all(base_dir)
+    # # 3) Slice, TTS, stretch, voice conversion
+    # split_audio_by_speaker(transcript_path, vocals, base_dir)
+    # synthesize_utterance_audio(transcript_path, base_dir)
+    # time_stretch_tts(base_dir, transcript_path)
+    # voice_conversion_for_all(base_dir)
 
-    # 4) Combine & mix with video
-    final_audio = combine_audio(base_dir, background, transcript_path)
-    output_video = output_folder / f"{video_path.stem}_dubbed.mp4"
-    mix_audio_with_video(video_path, final_audio, output_video)
+    # # 4) Combine & mix with video
+    # final_audio = combine_audio(base_dir, background, transcript_path)
+    # output_video = output_folder / f"{video_path.stem}_dubbed.mp4"
+    # mix_audio_with_video(video_path, final_audio, output_video)
 
-    logger.info("Auto dubbing complete! Final video at: %s", output_video)
+    # logger.info("Auto dubbing complete! Final video at: %s", output_video)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import json
 import logging
 from pathlib import Path
 from typing import List, Dict
-import whisper
+import stable_whisper
 import assemblyai as aai
 import time
 import deepl
@@ -19,7 +19,7 @@ logging.getLogger("deepl").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3-turbo") -> str:
+def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large") -> str:
     """
     Transcribe 'audio_path' using OpenAI Whisper and write output to 'whisper.json'.
 
@@ -32,17 +32,24 @@ def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3-t
         str: Path to the output JSON file.
     """
     logger.info("Starting Whisper transcription on %s", audio_path)
-    model = whisper.load_model(model_name)
-
-    result = model.transcribe(str(audio_path), verbose=False)
+    model = stable_whisper.load_model(model_name)
+    # result = model.transcribe(str(audio_path), vad=True, min_word_dur=0.3)
+    result = model.transcribe(str(audio_path), regroup=False)
+    (
+        result
+        .ignore_special_periods()
+        .clamp_max()
+        .split_by_gap(.75)
+        .clamp_max()
+    )
 
     transcription = [
         {
-            "start": round(seg["start"], 2),
-            "end": round(seg["end"], 2),
-            "text": seg["text"].strip()
+            "start": round(seg.start, 2),
+            "end": round(seg.end, 2),
+            "text": seg.text.strip()
         }
-        for seg in result["segments"]
+        for seg in result.segments
     ]
 
     # Save the transcription JSON
@@ -221,3 +228,11 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
         json.dump(transcript, f, ensure_ascii=False, indent=2)
     
     logger.info("Updated transcription with translations at %s", transcript_path)
+
+
+if __name__ == "__main__":
+    # Test run un stable whisper model
+    audio_path = Path(os.path.join("data", "processed", "video_5", "processed_vocals_video_5.wav"))
+    output_dir = Path("")
+    transcribe(audio_path=audio_path, output_dir=output_dir)
+

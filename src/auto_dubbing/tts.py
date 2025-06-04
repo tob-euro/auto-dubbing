@@ -155,11 +155,11 @@ def run_seed_vc(source: str, target: str, output_dir: str, diffusion_steps: int 
     """
     Run Seed-VC on a single stretched TTS utterance.
     """
-    python_executable = "/opt/miniconda3/envs/seed-vc/bin/python"
-    inference_script  = os.path.join("external", "seed-vc", "inference.py")
+    
+    inference_script  = os.path.join("seed-vc", "inference.py")
 
     command = [
-        python_executable, inference_script,
+        r"C:\Users\willi\anaconda3\envs\seed-vc\python", inference_script,
         "--source", source,
         "--target", target,
         "--output", output_dir,
