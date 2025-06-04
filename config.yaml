@@ -4,7 +4,7 @@ paths:
   processed_folder: "${paths.data_root}/processed"
   output_folder: "${paths.data_root}/output"
   ground_truth_folder: "${paths.data_root}/ground_truth"
-  input_video: "${paths.input_folder}/video_2.mp4"
+  input_video: "${paths.input_folder}/video_22.mp4"
 
 models:
   whisper:

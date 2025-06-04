@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 import time
 import deepl
-import whisper
+import stable_whisper
 import assemblyai as aai
 
 
@@ -18,7 +18,7 @@ logging.getLogger("deepl").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3-turbo") -> str:
+def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3") -> str:
     """
     Transcribe 'audio_path' using OpenAI Whisper and write output to 'whisper.json'.
 
@@ -31,21 +31,23 @@ def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3-t
         str: Path to the output JSON file.
     """
     logger.info("Starting Whisper transcription on %s", audio_path)
-    model = whisper.load_model(model_name)
-    result = model.transcribe(str(audio_path), verbose=False)
+    model = stable_whisper.load_model(model_name)
+    result = model.transcribe(
+        str(audio_path),
+    )
 
-    language_code = result["language"]
+    language_code = "en"
 
     transcription = [
         {
-            "start": round(seg["start"], 2),
-            "end": round(seg["end"], 2),
-            "text": seg["text"].strip()
+            "start": round(seg.start, 2),
+            "end": round(seg.end, 2),
+            "text": seg.text.strip()
         }
-        for seg in result["segments"]
+        for seg in result.segments
     ]
 
-    output_path = output_dir / "whisper.json"
+    output_path = output_dir / "whisper_ts.json"
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(transcription, f, ensure_ascii=False, indent=2)
 
@@ -208,3 +210,15 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
     
     logger.info("Updated transcription with translations at %s", transcript_path)
 
+# main file to test transcribe function
+def main():
+    # Example usage
+    vocals = Path("data/processed/video_22/separated_audio/vocals.wav")
+    output_dir = Path("data/processed/video_22")
+    model_name = "large-v3"
+
+    # Transcribe the audio
+    transcribe(vocals, output_dir, model_name)
+
+if __name__ == "__main__":
+    main()
