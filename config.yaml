@@ -6,12 +6,5 @@ paths:
   ground_truth_folder: "${paths.data_root}/ground_truth"
   input_video: "${paths.input_folder}/video_22.mp4"
 
-models:
-  whisper:
-    model_name: "large-v3-turbo"
-
-  demucs:
-    model_name: "mdx_extra_q"
-
 translation:
   target_language: "DA"

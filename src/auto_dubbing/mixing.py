@@ -21,8 +21,7 @@ def extract_audio(input_video: str, output_dir: str) -> str:
         The full path to the extracted WAV file.
     """
     # Build output path
-    video_name     = os.path.splitext(os.path.basename(input_video))[0]
-    output_audio   = os.path.join(output_dir, f"extracted_audio.wav")
+    output_audio = os.path.join(output_dir, "extracted_audio.wav")
 
     logger.info("Extracting audio from %s → %s", input_video, output_audio)
 
@@ -43,7 +42,7 @@ def extract_audio(input_video: str, output_dir: str) -> str:
     logger.info("Audio successfully extracted to %s", output_audio)
     return output_audio
 
-def separate_vocals(input_audio: str, output_dir: str, model: str = "mdx_extra_q") -> tuple[str, str]:
+def separate_vocals(input_audio: str, output_dir: str) -> tuple[str, str]:
     """
     Separate a waveform into vocals and background audio using Demucs (2-stem mode),
     then move the two resulting WAVs into:
@@ -58,12 +57,12 @@ def separate_vocals(input_audio: str, output_dir: str, model: str = "mdx_extra_q
     Returns:
         A 2-tuple of (vocals_path, background_path).
     """
-    logger.info("Running Demucs model %r on %s", model, input_audio)
+    logger.info("Running Demucs model on %s", input_audio)
 
     # Build and run Demucs command
     cmd = [
         "demucs",
-        "-n", model,
+        "-n", "mdx_extra_q",
         "--two-stems=vocals",
         "--out", output_dir,
         input_audio

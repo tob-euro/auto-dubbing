@@ -18,7 +18,7 @@ logging.getLogger("deepl").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3") -> str:
+def transcribe(audio_path: Path, output_dir: Path) -> str:
     """
     Transcribe 'audio_path' using OpenAI Whisper and write output to 'whisper.json'.
 
@@ -32,7 +32,7 @@ def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3")
     """
     logger.info("Starting Whisper transcription on %s", audio_path)
 
-    model = stable_whisper.load_model(model_name)
+    model = stable_whisper.load_model("large-v3")
     result = model.transcribe(
         str(audio_path),
         suppress_silence=True,
