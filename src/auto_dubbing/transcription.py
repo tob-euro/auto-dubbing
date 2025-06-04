@@ -31,12 +31,26 @@ def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3")
         str: Path to the output JSON file.
     """
     logger.info("Starting Whisper transcription on %s", audio_path)
+
     model = stable_whisper.load_model(model_name)
     result = model.transcribe(
         str(audio_path),
+        suppress_silence=True,
+        vad=True,
+        regroup=False
+    )
+    model.refine(str(audio_path), result, precision=0.02, word_level=True)
+
+    (
+        result
+        .ignore_special_periods()
+        .clamp_max()
+        .split_by_punctuation([('.', ' '), '。', '?', '？'])
+        .split_by_gap(.5)
+        .clamp_max()
     )
 
-    language_code = "en"
+    language_code = result.language
 
     transcription = [
         {
@@ -213,7 +227,7 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
 # main file to test transcribe function
 def main():
     # Example usage
-    vocals = Path("data/processed/video_22/separated_audio/vocals.wav")
+    vocals = Path("data/processed/video_22/processed_vocals.wav")
     output_dir = Path("data/processed/video_22")
     model_name = "large-v3"
 

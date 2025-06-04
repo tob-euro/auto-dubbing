@@ -6,14 +6,14 @@ from typing import Tuple
 
 from dotenv import load_dotenv
 from omegaconf import OmegaConf, DictConfig
+from rich.logging import RichHandler
 
-from auto_dubbing.mixing import extract_audio, separate_vocals, mix_background_audio, combine_audio, mix_audio_with_video
+from auto_dubbing.mixing import extract_audio, separate_vocals, process_vocals, mix_background_audio, combine_audio, mix_audio_with_video
 from auto_dubbing.transcription import transcribe, speaker_diarization, align_speaker_labels, translate
 from auto_dubbing.tts import tts, time_stretch_tts, split_audio_by_utterance, process_all_voice_conversions, build_all_reference_audios
 
-
 logger = logging.getLogger(__name__)
-from rich.logging import RichHandler
+
 logging.basicConfig(
     level="INFO",
     format="%(message)s",
@@ -61,7 +61,7 @@ def run_pipeline() -> None:
     # 1) Extract & separate
     audio = extract_audio(video_path, base_dir)
     vocals, background = separate_vocals(audio, base_dir)
-    #vocals = procss(vocals)
+    vocals = process_vocals(vocals, base_dir)
 
     # 2) Transcribe & translate
     transcript, language = transcribe(vocals, base_dir)
