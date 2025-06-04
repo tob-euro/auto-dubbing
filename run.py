@@ -9,8 +9,7 @@ from omegaconf import OmegaConf, DictConfig
 
 from auto_dubbing.mixing import extract_audio, separate_vocals, mix_background_audio, combine_audio, mix_audio_with_video
 from auto_dubbing.transcription import transcribe, speaker_diarization, align_speaker_labels, translate
-from auto_dubbing.vocal_slicing import split_audio_by_speaker
-from auto_dubbing.tts import tts, time_stretch_tts, voice_conversion_for_all
+from auto_dubbing.tts import tts, time_stretch_tts, split_audio_by_utterance, process_all_voice_conversions, build_all_reference_audios
 
 
 logger = logging.getLogger(__name__)
@@ -62,6 +61,7 @@ def run_pipeline() -> None:
     # 1) Extract & separate
     audio = extract_audio(video_path, base_dir)
     vocals, background = separate_vocals(audio, base_dir)
+    vocals = procss(vocals)
 
     # 2) Transcribe & translate
     transcript, language = transcribe(vocals, base_dir)
@@ -69,11 +69,13 @@ def run_pipeline() -> None:
     full_transcript = align_speaker_labels(transcript, diarization, base_dir)
     translate(full_transcript, language.upper(), config.translation.target_language, deepl_key)
 
-    # # 3) Slice, TTS, stretch, voice conversion
-    # split_audio_by_speaker(full_transcript, vocals, base_dir)
-    # tts(full_transcript, base_dir)
-    # time_stretch_tts(base_dir, full_transcript)
-    # voice_conversion_for_all(base_dir)
+# 3) Slice, TTS, stretch, voice conversion
+    split_audio_by_utterance(full_transcript, vocals, base_dir)
+    build_all_reference_audios(base_dir, reference_window=2)
+    tts(full_transcript, base_dir)
+    time_stretch_tts(base_dir, full_transcript)
+    process_all_voice_conversions(base_dir)
+
 
     # 4) Combine & mix with video
     background_mix = mix_background_audio(full_transcript, audio, background, base_dir, crossfade_duration_ms=500)

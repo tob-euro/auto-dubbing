@@ -3,6 +3,7 @@ paths:
   input_folder: "${paths.data_root}/input"
   processed_folder: "${paths.data_root}/processed"
   output_folder: "${paths.data_root}/output"
+  ground_truth_folder: "${paths.data_root}/ground_truth"
   input_video: "${paths.input_folder}/video_2.mp4"
 
 models:
@@ -14,10 +15,3 @@ models:
 
 translation:
   target_language: "DA"
-
-preprocessing:
-  sample_rate: 44100
-  channels: 2
-  high_pass_freq: 80
-  low_pass_freq: null
-

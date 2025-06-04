@@ -208,18 +208,3 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
     
     logger.info("Updated transcription with translations at %s", transcript_path)
 
-def main() -> None:
-    """
-    Main function to run the transcription pipeline.
-    This is a placeholder for where you would integrate this into a larger pipeline.
-    """
-    # Example usage
-    audio_path = Path("data/input/test.mp4")
-    output_dir = Path("data/processed/test")
-    
-    # Transcribe audio
-    transcribe(audio_path, output_dir)
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    main()

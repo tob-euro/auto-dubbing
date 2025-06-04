@@ -7,7 +7,6 @@ from io import BytesIO
 from google.cloud import texttospeech
 from pydub import AudioSegment
 from audiostretchy.stretch import stretch_audio
-from pydub import AudioSegment
 
 logger = logging.getLogger(__name__)
 
@@ -150,44 +149,161 @@ def time_stretch_tts(base_dir: str, transcript_path: str):
     return results
 
 
-def run_seed_vc(source: str, target: str, output_dir: str, diffusion_steps: int = 100):
+def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir: str):
     """
-    Run Seed-VC on a single stretched TTS utterance.
+    Split a vocals WAV into per-utterance WAVs based on speaker turns in transcript.
+
+    Args:
+        transcript_path: Path to the JSON file containing utterances.
+        vocals_path:     Path to the vocals WAV.
+
+    Returns:
+        A dict mapping speaker ID → list of utterance WAV paths.
     """
+    logger.info("Splitting audio by utterances")
+
+    with open(transcript_path, "r", encoding="utf-8") as f:
+        transcript = json.load(f)
+    vocals = AudioSegment.from_wav(vocals_path)
+
+    speaker_root = os.path.join(output_dir, "speaker_audio")
+    os.makedirs(speaker_root, exist_ok=True)
+
+    speaker_utterances: dict[str, list[str]] = {}
+    speaker_counts: dict[str, int] = {}
+
+    for utterance in transcript:
+        speaker_id = utterance["speaker"]
+        start_ms = int(utterance["start"] * 1000)
+        end_ms = int(utterance["end"] * 1000)
+        seg = vocals[start_ms:end_ms]
+
+        speaker_dir = os.path.join(speaker_root, f"speaker_{speaker_id}", "utterances")
+        os.makedirs(speaker_dir, exist_ok=True)
+
+        # Increment this speaker's utterance count
+        speaker_counts[speaker_id] = speaker_counts.get(speaker_id, 0) + 1
+        utt_idx = speaker_counts[speaker_id]
+
+        filename = f"{speaker_id}_utt_{utt_idx:02d}.wav"
+        out_path = os.path.join(speaker_dir, filename)
+        seg.export(out_path, format="wav")
+
+        speaker_utterances.setdefault(speaker_id, []).append(out_path)
+        logger.info("  Saved utterance %d for speaker %s → %s", utt_idx, speaker_id, out_path)
+
+    logger.info("Finished splitting %d utterances across %d speakers", len(transcript), len(speaker_utterances))
+    return speaker_utterances
+
+
+def build_all_reference_audios(base_dir: str, reference_window: int = 1):
+    """
+    Build all reference audios for each utterance using a window of neighboring utterances.
+    Saves them under:
+        speaker_audio/speaker_{X}/references/{X}_utt_{XX}_ref.wav
+
+    Args:
+        base_dir: Root directory containing speaker_audio folders.
+        reference_window: Number of neighboring utterances before and after to include.
+    """
+    speaker_root = os.path.join(base_dir, "speaker_audio")
+    logger.info("Building reference audio for all speakers in %s", speaker_root)
+
+    for entry in os.listdir(speaker_root):
+        if not entry.startswith("speaker_"):
+            continue
+
+        spk = entry.split("_", 1)[1]
+        spk_dir = os.path.join(speaker_root, entry)
+        utt_dir = os.path.join(spk_dir, "utterances")
+        ref_dir = os.path.join(spk_dir, "references")
+
+        if not os.path.isdir(utt_dir):
+            logger.warning("Missing utterance dir for %s, skipping", entry)
+            continue
+        os.makedirs(ref_dir, exist_ok=True)
+
+        files = sorted([
+            f for f in os.listdir(utt_dir)
+            if f.startswith(f"{spk}_utt_") and f.endswith(".wav")
+        ])
+
+        for idx, fname in enumerate(files):
+            utt_id = f"{spk}_utt_{idx+1:02d}"
+            idx_int = idx + 1
+
+            ref_paths = []
+            for offset in range(-reference_window, reference_window + 1):
+                neighbor_idx = idx_int + offset
+                if neighbor_idx < 1:
+                    continue
+                neighbor_fname = f"{spk}_utt_{neighbor_idx:02d}.wav"
+                neighbor_path = os.path.join(utt_dir, neighbor_fname)
+                if os.path.exists(neighbor_path):
+                    ref_paths.append(neighbor_path)
+
+            if not ref_paths:
+                logger.warning("No valid references for %s", utt_id)
+                continue
+
+            combined = AudioSegment.empty()
+            for ref in ref_paths:
+                combined += AudioSegment.from_wav(ref)
+
+            ref_out_path = os.path.join(ref_dir, f"{utt_id}_ref.wav")
+            combined.export(ref_out_path, format="wav")
+            logger.info("Built reference for %s → %s", utt_id, ref_out_path)
+
+    logger.info("Finished building reference audio.")
+
+
+
+def voice_conversion(source: str, target: str, output_dir: str):
     python_executable = "/opt/miniconda3/envs/seed-vc/bin/python"
-    inference_script  = os.path.join("external", "seed-vc", "inference.py")
+    inference_script  = "inference_v2.py"
+
+    # Convert all paths to absolute
+    source = os.path.abspath(source)
+    target = os.path.abspath(target)
+    output_dir = os.path.abspath(output_dir)
 
     command = [
         python_executable, inference_script,
         "--source", source,
         "--target", target,
         "--output", output_dir,
-        "--diffusion-steps", str(diffusion_steps),
-        "--length-adjust",  "1.0",
-        "--inference-cfg-rate", "0.7"
+        "--diffusion-steps", "50",
+        "--length-adjust", "1.0",
+        "--intelligibility-cfg-rate", "0.8",
+        "--similarity-cfg-rate", "0.9",
+        "--convert-style", str(False),
+        "--top-p", "0.9",
+        "--temperature", "1.0",
+        "--repetition-penalty", "1.0"
     ]
-    subprocess.run(command, check=True, capture_output=True, text=True)
+
+    subprocess.run(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=os.path.join(os.path.dirname(__file__), "../../external/seed-vc")
+    )
 
 
-def voice_conversion_for_all(base_dir: str):
+def process_all_voice_conversions(base_dir: str):
     """
-    For every speaker under base_dir/speaker_audio, run Seed-VC on each
-    stretched TTS file and emit *_vc.wav into tts_vc/.
+    Perform Seed-VC voice conversion using prebuilt reference audio.
 
-    Expects:
-        {base_dir}/speaker_audio/
-            speaker_A/
-                speaker_A.wav        # target voice
-                tts_stretched/
-                    A_utt_01_stretched.wav
-                    ...
-    Produces:
-                tts_vc/
-                    A_utt_01_vc.wav
-                    ...
+    Expects the following directory structure:
+        speaker_audio/speaker_{X}/tts_stretched/{X}_utt_{XX}_stretched.wav
+        speaker_audio/speaker_{X}/references/{X}_utt_{XX}_ref.wav
+
+    Outputs:
+        speaker_audio/speaker_{X}/tts_vc/{X}_utt_{XX}_vc.wav
     """
     speaker_root = os.path.join(base_dir, "speaker_audio")
-    logger.info("Running voice conversion under %s", speaker_root)
+    logger.info("Running voice conversion using prebuilt references under %s", speaker_root)
 
     if not os.path.isdir(speaker_root):
         logger.error("Expected speaker_audio directory at %s not found", speaker_root)
@@ -197,55 +313,52 @@ def voice_conversion_for_all(base_dir: str):
         if not entry.startswith("speaker_"):
             continue
 
-        spk_dir = os.path.join(speaker_root, entry)
         spk = entry.split("_", 1)[1]
+        spk_dir = os.path.join(speaker_root, entry)
 
-        # target sample for this speaker
-        target = os.path.join(spk_dir, f"{entry}.wav")
         stretched_dir = os.path.join(spk_dir, "tts_stretched")
-        vc_dir       = os.path.join(spk_dir, "tts_vc")
+        ref_dir       = os.path.join(spk_dir, "references")
+        vc_dir        = os.path.join(spk_dir, "tts_vc")
 
-        if not os.path.isfile(target):
-            logger.warning("No target sample for %s, skipping", entry)
+        if not os.path.isdir(stretched_dir) or not os.path.isdir(ref_dir):
+            logger.warning("Missing required directories for speaker %s, skipping", spk)
             continue
-        if not os.path.isdir(stretched_dir):
-            logger.warning("No stretched dir for %s, skipping", entry)
-            continue
-
         os.makedirs(vc_dir, exist_ok=True)
 
-        # find all stretched files for this speaker
         files = sorted([
             f for f in os.listdir(stretched_dir)
             if f.startswith(f"{spk}_utt_") and f.endswith("_stretched.wav")
         ])
-
         if not files:
-            logger.warning("No stretched files for %s, skipping", entry)
+            logger.warning("No stretched files for speaker %s", spk)
             continue
 
         for idx, fname in enumerate(files, start=1):
-            src = os.path.join(stretched_dir, fname)
-            count = f"{idx:02d}"
-            logger.info("Converting %s (utterance %s)", fname, count)
+            utt_id = f"{spk}_utt_{idx:02d}"
+            src    = os.path.join(stretched_dir, fname)
+            ref    = os.path.join(ref_dir, f"{utt_id}_ref.wav")
 
-            temp_out = os.path.join(vc_dir, f"temp_{count}")
+            if not os.path.isfile(ref):
+                logger.warning("Missing reference for %s → skipping", utt_id)
+                continue
+
+            logger.info("Converting %s using reference %s", fname, os.path.basename(ref))
+            temp_out = os.path.join(vc_dir, f"temp_{idx:02d}")
             try:
-                run_seed_vc(src, target, temp_out)
+                voice_conversion(src, ref, temp_out)
             except subprocess.CalledProcessError as e:
-                logger.error("Seed-VC failed on %s: %s", fname, e)
+                logger.error("Seed-VC failed on %s: %s", utt_id, e)
                 shutil.rmtree(temp_out, ignore_errors=True)
                 continue
 
-            # move resulting .wav into final vc_dir
-            wavs = [f for f in os.listdir(temp_out) if f.endswith(".wav")]
-            if not wavs:
-                logger.error("No output .wav in %s", temp_out)
+            vc_outputs = [f for f in os.listdir(temp_out) if f.endswith(".wav")]
+            if not vc_outputs:
+                logger.error("No output .wav for %s", utt_id)
                 shutil.rmtree(temp_out, ignore_errors=True)
                 continue
 
-            final_name = f"{spk}_utt_{count}_vc.wav"
-            shutil.move(os.path.join(temp_out, wavs[0]), os.path.join(vc_dir, final_name))
+            final_path = os.path.join(vc_dir, f"{utt_id}_vc.wav")
+            shutil.move(os.path.join(temp_out, vc_outputs[0]), final_path)
             shutil.rmtree(temp_out, ignore_errors=True)
 
     logger.info("Voice conversion complete.")
