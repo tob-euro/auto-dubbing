@@ -1,27 +1,17 @@
-# config.yaml (in your project root, next to pipeline.py or wherever you prefer)
 paths:
   data_root: "data"
   input_folder: "${paths.data_root}/input"
   processed_folder: "${paths.data_root}/processed"
   output_folder: "${paths.data_root}/output"
-  input_video: "${paths.input_folder}/video_20.mp4"
+  ground_truth_folder: "${paths.data_root}/ground_truth"
+  input_video: "${paths.input_folder}/video_19.mp4"
 
 models:
   whisper:
-    model_name: "large-v3-turbo"
+    model_name: "large-v3"
 
   demucs:
-    model_name: "htdemucs"
-
-  pyannote:
-    diarization_model: "pyannote/speaker-diarization-3.1"
+    model_name: "mdx_extra_q"
 
 translation:
   target_language: "DA"
-
-preprocessing:
-  sample_rate: 44100
-  channels: 2
-  high_pass_freq: 80
-  low_pass_freq: null
-
