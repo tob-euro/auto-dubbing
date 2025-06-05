@@ -10,6 +10,29 @@ from audiostretchy.stretch import stretch_audio
 
 logger = logging.getLogger(__name__)
 
+def trim_trailing_silence(audio: AudioSegment, silence_thresh: int = -40, chunk_size: int = 10) -> AudioSegment:
+    """
+    Trim silence from the end of the audio.
+
+    Args:
+        audio:         AudioSegment object.
+        silence_thresh: Silence threshold in dBFS. Anything quieter is considered silence.
+        chunk_size:    How many ms to scan at a time (higher = faster but less precise).
+
+    Returns:
+        Trimmed AudioSegment.
+    """
+    trim_ms = 0
+    while trim_ms < len(audio):
+        chunk = audio[-(trim_ms + chunk_size): -trim_ms if trim_ms > 0 else None]
+        if chunk.dBFS > silence_thresh:
+            break
+        trim_ms += chunk_size
+
+    if trim_ms == 0:
+        return audio
+    return audio[:-trim_ms]
+
 
 def tts(transcript_path: str, output_dir: str, language_code: str = "da-DK",voice_name: str = "da-DK-Neural2-D", gender: texttospeech.SsmlVoiceGender = texttospeech.SsmlVoiceGender.FEMALE):
     """
@@ -64,6 +87,7 @@ def tts(transcript_path: str, output_dir: str, language_code: str = "da-DK",voic
             request={"input": input_msg, "voice": voice, "audio_config": audio_config}
         )
         audio_seg = AudioSegment.from_mp3(BytesIO(response.audio_content))
+        audio_seg = trim_trailing_silence(audio_seg, silence_thresh=-40)
 
         # Write out
         speaker_dir = os.path.join(output_dir, "speaker_audio", f"speaker_{speaker_id}", "tts")
@@ -76,20 +100,11 @@ def tts(transcript_path: str, output_dir: str, language_code: str = "da-DK",voic
 
 
 def time_stretch_tts(base_dir: str, transcript_path: str):
-    """
-    Time-stretch your TTS utterances so they match the original utterance timings.
-
-    Args:
-        base_dir:        Root of your “processed/video_X” folder.
-        transcript_path: Full path to transcript.json.
-    """
     logger.info("Time-stretching TTS utterances")
 
-    # Load transcript
     with open(transcript_path, "r", encoding="utf-8") as f:
         transcript = json.load(f)
 
-    # Group by speaker
     by_speaker: dict[str, list[dict]] = {}
     for utterance in transcript:
         by_speaker.setdefault(utterance["speaker"], []).append(utterance)
@@ -97,26 +112,57 @@ def time_stretch_tts(base_dir: str, transcript_path: str):
     for speaker_id, utts in by_speaker.items():
         logger.info("Processing speaker %s (%d utterances)", speaker_id, len(utts))
 
-        # Correct paths under speaker_audio/
         tts_dir       = os.path.join(base_dir, "speaker_audio", f"speaker_{speaker_id}", "tts")
         stretched_dir = os.path.join(base_dir, "speaker_audio", f"speaker_{speaker_id}", "tts_stretched")
         os.makedirs(stretched_dir, exist_ok=True)
+
+        MIN_RATIO = 0.5
+        MAX_RATIO = 1.5
 
         for idx, utterance in enumerate(utts, start=1):
             target_ms = int((utterance["end"] - utterance["start"]) * 1000)
             src_path  = os.path.join(tts_dir, f"{speaker_id}_utt_{idx:02d}.wav")
             out_path  = os.path.join(stretched_dir, f"{speaker_id}_utt_{idx:02d}_stretched.wav")
 
-            # load original to compute ratio
-            orig = AudioSegment.from_file(src_path)
-            ratio = (target_ms / len(orig)) if len(orig) > 0 else 1.0
+            if not os.path.exists(src_path):
+                logger.warning("Missing audio file: %s", src_path)
+                continue
 
-            # stretch + trim
-            stretch_audio(src_path, out_path, ratio=ratio)
-            stretched = AudioSegment.from_file(out_path)[:target_ms]
-            stretched.export(out_path, format="wav")
+            orig = AudioSegment.from_file(src_path)
+            if len(orig) == 0:
+                logger.warning("Skipping empty audio file: %s", src_path)
+                continue
+
+            ratio = target_ms / len(orig)
+            clamped_ratio = max(MIN_RATIO, min(MAX_RATIO, ratio))
+
+            if clamped_ratio != ratio:
+                logger.warning(
+                    "Clamping stretch ratio for %s: %.2f -> %.2f (target=%dms, orig=%dms)",
+                    src_path, ratio, clamped_ratio, target_ms, len(orig)
+                )
+
+            # Stretch audio using your stretch_audio function
+            stretch_audio(src_path, out_path, ratio=clamped_ratio)
+
+            if not os.path.exists(out_path):
+                logger.error("Stretched audio not found: %s", out_path)
+                continue
+
+            stretched = AudioSegment.from_file(out_path)
+            trimmed = stretched[:target_ms]
+
+            # Warn if final duration is significantly short
+            if len(trimmed) < 0.9 * target_ms:
+                logger.warning(
+                    "Trimmed audio is short (%dms < %dms) for %s",
+                    len(trimmed), target_ms, out_path
+                )
+
+            trimmed.export(out_path, format="wav")
 
     logger.info("Time-stretching complete for %d speakers", len(by_speaker))
+
 
 
 def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir: str):
@@ -155,8 +201,6 @@ def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir:
         filename = f"{speaker_id}_utt_{utt_idx:02d}.wav"
         out_path = os.path.join(speaker_dir, filename)
         seg.export(out_path, format="wav")
-
-        logger.info("  Saved utterance %d for speaker %s → %s", utt_idx, speaker_id, out_path)
 
     logger.info("Finished splitting %d utterances across speakers", len(transcript))
 
@@ -215,7 +259,6 @@ def build_all_reference_audios(base_dir: str, reference_window: int = 1):
 
             ref_out_path = os.path.join(ref_dir, f"{utt_id}_ref.wav")
             combined.export(ref_out_path, format="wav")
-            logger.info("Built reference for %s → %s", utt_id, ref_out_path)
 
     logger.info("Finished building reference audio.")
 

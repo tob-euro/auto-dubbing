@@ -21,8 +21,14 @@ def extract_audio(input_video: str, output_dir: str) -> str:
     Returns:
         The full path to the extracted WAV file.
     """
+     # Convert to Path objects for better handling
+    input_video = Path(input_video)
+    output_dir = Path(output_dir)
     # Build output path
     output_audio = os.path.join(output_dir, "extracted_audio.wav")
+
+    # Create output directory if it doesn't exist
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Extracting audio from %s → %s", input_video, output_audio)
 
@@ -51,13 +57,14 @@ def separate_vocals(input_audio: str, output_dir: str) -> tuple[str, str]:
     Args:
         input_audio: Path to the source WAV file.
         output_dir:  Base directory for processed outputs.
+        model:       Demucs model name (defaults to "mdx_extra_q").
 
     Returns:
         A 2-tuple of (vocals_path, background_path).
     """
-    logger.info("Running Demucs model on %s", input_audio)
     model = "mdx_extra_q"
-
+    logger.info("Running Demucs model %r on %s", model, input_audio)
+    
     # Build and run Demucs command
     cmd = [
         "demucs",
@@ -72,23 +79,24 @@ def separate_vocals(input_audio: str, output_dir: str) -> tuple[str, str]:
     model_dir = os.path.join(output_dir, model)
 
     # Glob for the two stems and pick the first match
-    vocals_src = glob.glob(os.path.join(model_dir, "**", "vocals.wav"),     recursive=True)[0]
+    vocals_src     = glob.glob(os.path.join(model_dir, "**", "vocals.wav"),     recursive=True)[0]
     background_src = glob.glob(os.path.join(model_dir, "**", "no_vocals.wav"), recursive=True)[0]
 
     # Prepare the separated folder
     sep_dir = os.path.join(output_dir, "separated_audio")
     os.makedirs(sep_dir, exist_ok=True)
-    vocals_path = os.path.join(sep_dir, "vocals.wav")
+    vocals_path     = os.path.join(sep_dir, "vocals.wav")
     background_path = os.path.join(sep_dir, "background.wav")
 
     # Move them out
-    shutil.move(vocals_src, vocals_path)
+    shutil.move(vocals_src,     vocals_path)
     shutil.move(background_src, background_path)
     logger.info("Saved vocal audio to %s", vocals_path)
     logger.info("Saved background audio to %s", background_path)
 
     # Clean up temp model folder
     shutil.rmtree(model_dir, ignore_errors=True)
+    logger.debug("Removed temporary folder %s", model_dir)
 
     return vocals_path, background_path
 
@@ -288,3 +296,4 @@ def mix_audio_with_video(video_path: str, audio_path: str, output_video_path: st
 
     logger.info("Dubbed video saved to %s", output_video_path)
     return output_video_path
+

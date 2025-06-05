@@ -8,7 +8,6 @@ import deepl
 import stable_whisper
 import assemblyai as aai
 
-
 # Silence httpx and assemblyai logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("assemblyai").setLevel(logging.WARNING)
@@ -21,6 +20,16 @@ os.environ["KMP_WARNINGS"] = "FALSE"
 
 # Create logger
 logger = logging.getLogger(__name__)
+
+def extend_short_segments(segments, min_duration=0.5):
+    for seg in segments:
+        dur = seg.end - seg.start
+        if dur < min_duration:
+            # Stretch to minimum, center on original midpoint
+            mid = (seg.start + seg.end) / 2
+            seg.start = max(0, mid - min_duration / 2)
+            seg.end = mid + min_duration / 2
+    return segments
 
 
 def transcribe(audio_path: Path, output_dir: Path) -> str:
@@ -43,8 +52,10 @@ def transcribe(audio_path: Path, output_dir: Path) -> str:
     # Run word-leveltranscription
     result = model.transcribe(
         str(audio_path),
-        suppress_silence=True,
         vad=True,
+        vad_threshold=0.45,
+        min_word_dur=0.3,
+        nonspeech_error=0.25,
         regroup=False,
         verbose=None
     )
@@ -53,8 +64,8 @@ def transcribe(audio_path: Path, output_dir: Path) -> str:
     model.refine(
         str(audio_path),
         result,
-        word_level=True,
-        precision=0.02,
+        word_level=False,
+        precision=0.15,
         verbose=None
     )
 
@@ -64,11 +75,11 @@ def transcribe(audio_path: Path, output_dir: Path) -> str:
         .ignore_special_periods()
         .clamp_max()
         .split_by_punctuation([('.', ' '), '。', '?', '？'])
-        .split_by_gap(.5)
+        .split_by_gap(1.0)
         .clamp_max()
     )
-    result.convert_to_segment_level().adjust_gaps()
 
+    result.segments = extend_short_segments(result.segments, min_duration=0.5)
     # Save detected language
     language_code = result.language
 
