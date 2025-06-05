@@ -101,42 +101,6 @@ def separate_vocals(input_audio: str, output_dir: str) -> tuple[str, str]:
     return vocals_path, background_path
 
 
-def process_vocals(vocals_path: str, output_dir: str) -> str:
-    """
-    Preprocesses isolated vocals for transcription: normalizes volume, applies band-pass filtering,
-    resamples to 16 kHz mono, and exports the result.
-
-    Args:
-        vocals_path: Path to the isolated vocals WAV file (e.g., from Demucs or source separation).
-        output_dir:  Directory where the processed output will be saved.
-
-    Returns:
-        Path to the processed vocals WAV file.
-    """
-    logger.info("Processing vocals from %s", vocals_path)
-
-    vocals = AudioSegment.from_file(vocals_path)
-
-    # Normalize to target dBFS
-    target_dBFS = -16.0
-    change_in_dBFS = target_dBFS - vocals.dBFS
-    vocals = vocals.apply_gain(change_in_dBFS)
-
-    # Apply filters
-    vocals = vocals.high_pass_filter(80)
-    vocals = vocals.low_pass_filter(16000)
-
-    # Resample for Whisper
-    vocals = vocals.set_frame_rate(16000).set_channels(1)
-
-    # Export
-    processed_vocals_path = os.path.join(output_dir, "processed_vocals.wav")
-    vocals.export(processed_vocals_path, format="wav")
-
-    logger.info("Processed vocals saved to %s", processed_vocals_path)
-    return processed_vocals_path
-
-
 def mix_background_audio(transcript_path: str, extracted_audio_path: str, demucs_background_path: str, output_dir: str) -> str:
     """
     Remixes background audio using the original audio and the demucs isolated background audio.

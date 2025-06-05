@@ -59,23 +59,22 @@ def run_pipeline() -> None:
     video_path, base_dir, output_folder = prepare_paths(config)
 
     # 1) Extract & separate audio
-    #audio = extract_audio(video_path, base_dir)
-    #vocals, background = separate_vocals(audio, base_dir)
+    audio = extract_audio(video_path, base_dir)
+    vocals, background = separate_vocals(audio, base_dir)
     background = "data/processed/video_2/separated_audio/background.wav"  # For testing purposes
-    #vocals = process_vocals(vocals, base_dir)
 
     # 2) Transcribe & translate vocals
-    # transcript, language = transcribe(vocals, base_dir)
-    # diarization = speaker_diarization(str(vocals), assembly_key, base_dir)
-    # full_transcript = align_speaker_labels(transcript, diarization, base_dir)
-    # translate(full_transcript, "EN", config.translation.target_language, deepl_key)
+    transcript, language = transcribe(vocals, base_dir)
+    diarization = speaker_diarization(str(vocals), assembly_key, base_dir)
+    full_transcript = align_speaker_labels(transcript, diarization, base_dir)
+    translate(full_transcript, "EN", config.translation.target_language, deepl_key)
     
-    # # 3) TTS, stretch, build references, voice conversion
-    # split_audio_by_utterance(full_transcript, vocals, base_dir)
-    # build_all_reference_audios(base_dir, reference_window=2)
-    # tts(full_transcript, base_dir)
-    # time_stretch_tts(base_dir, full_transcript)
-    # process_all_voice_conversions(base_dir)
+    # 3) TTS, stretch, build references, voice conversion
+    split_audio_by_utterance(full_transcript, vocals, base_dir)
+    build_all_reference_audios(base_dir, reference_window=2)
+    tts(full_transcript, base_dir)
+    time_stretch_tts(base_dir, full_transcript)
+    process_all_voice_conversions(base_dir)
     full_transcript = "data/processed/video_2/transcript.json"  # For testing purposes
 
     # # 4) Remix background, mix vocals & background, combine audio with video
