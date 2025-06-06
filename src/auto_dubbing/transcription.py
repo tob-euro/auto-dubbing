@@ -64,7 +64,7 @@ def transcribe(audio_path: Path, output_dir: Path) -> str:
     model.refine(
         str(audio_path),
         result,
-        word_level=False,
+        word_level=True,
         precision=0.15,
         verbose=None
     )

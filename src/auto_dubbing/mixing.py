@@ -101,67 +101,6 @@ def separate_vocals(input_audio: str, output_dir: str) -> tuple[str, str]:
     return vocals_path, background_path
 
 
-def mix_background_audio(transcript_path: str, extracted_audio_path: str, demucs_background_path: str, output_dir: str) -> str:
-    """
-    Remixes background audio using the original audio and the demucs isolated background audio.
-
-    Args:
-        transcript_path:         Path to the Whisper transcript JSON file.
-        extracted_audio_path:    Path to the full extracted original audio (e.g., from a video).
-        demucs_background_path:  Path to the background-only audio (e.g., from Demucs separation).
-        output_dir:              Directory to save the final mixed output WAV file.
-
-    Returns:
-        Path to the reconstructed background mix WAV file.
-    """
-    # Load transcript
-    with open(transcript_path, "r") as f:
-        transcript = json.load(f)
-
-    # Load audios
-    orig_audio = AudioSegment.from_file(extracted_audio_path)
-    bg_audio = AudioSegment.from_file(demucs_background_path)
-    duration_ms = len(orig_audio)
-
-    result = AudioSegment.empty()
-    last_end_ms = 0
-
-    for entry in transcript:
-        start_ms = int(entry["start"] * 1000)
-        end_ms = int(entry["end"] * 1000)
-
-        # Clamp to audio duration
-        start_ms = max(0, min(start_ms, duration_ms))
-        end_ms = max(0, min(end_ms, duration_ms))
-
-        # Add non-speech segment from original audio
-        if start_ms > last_end_ms:
-            non_speech = orig_audio[last_end_ms:start_ms]
-            fade = min(500, len(non_speech) // 4)
-            non_speech = non_speech.fade_in(fade).fade_out(fade)
-            result += non_speech
-
-        # Add speech segment from background audio
-        speech = bg_audio[start_ms:end_ms]
-        fade = min(500, len(speech) // 4)
-        speech = speech.fade_in(fade).fade_out(fade)
-        result += speech
-
-        last_end_ms = end_ms
-
-    # Add tail (non-speech) from end of last speech to end of audio
-    if last_end_ms < duration_ms:
-        tail = orig_audio[last_end_ms:]
-        fade = min(500, len(tail) // 4)
-        tail = tail.fade_in(fade).fade_out(fade)
-        result += tail
-
-    # Save the output
-    output_path = Path(output_dir) / "background_mix.wav"
-    result.export(output_path, format="wav")
-    return str(output_path)
-
-
 def combine_audio(base_dir: str, background_audio_path: str, transcript_path: str) -> str:
     """
     Overlays voice-converted clips onto the background track and writes the final mix.

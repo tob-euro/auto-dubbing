@@ -265,7 +265,7 @@ def build_all_reference_audios(base_dir: str, reference_window: int = 1):
 
 def voice_conversion(source: str, target: str, output_dir: str):
     python_executable = "/opt/miniconda3/envs/seed-vc/bin/python"
-    inference_script  = "inference_v2.py"
+    inference_script  = "external/seed-vc/inference.py"
 
     # Convert all paths to absolute
     source = os.path.abspath(source)
@@ -279,21 +279,16 @@ def voice_conversion(source: str, target: str, output_dir: str):
         "--output", output_dir,
         "--diffusion-steps", "50",
         "--length-adjust", "1.0",
-        "--intelligibility-cfg-rate", "0.8",
-        "--similarity-cfg-rate", "0.9",
-        "--convert-style", str(False),
-        "--top-p", "0.9",
-        "--temperature", "1.0",
-        "--repetition-penalty", "1.0"
+        "--inference-cfg-rate", "0.7"
     ]
 
-    subprocess.run(
-        command,
-        check=True,
-        capture_output=True,
-        text=True,
-        cwd=os.path.join(os.path.dirname(__file__), "../../external/seed-vc")
-    )
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True, encoding="utf-8")
+    except subprocess.CalledProcessError as e:
+        print("Voice conversion subprocess failed!")
+        print("STDOUT:\n", e.stdout)
+        print("STDERR:\n", e.stderr)
+        raise
 
 
 def process_all_voice_conversions(base_dir: str):

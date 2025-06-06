@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from omegaconf import OmegaConf, DictConfig
 from rich.logging import RichHandler
 
-from auto_dubbing.mixing import extract_audio, separate_vocals, process_vocals, mix_background_audio, combine_audio, mix_audio_with_video
+from auto_dubbing.mixing import extract_audio, separate_vocals,combine_audio, mix_audio_with_video
 from auto_dubbing.transcription import transcribe, speaker_diarization, align_speaker_labels, translate
 from auto_dubbing.tts import tts, time_stretch_tts, split_audio_by_utterance, process_all_voice_conversions, build_all_reference_audios
 
@@ -59,26 +59,25 @@ def run_pipeline() -> None:
     video_path, base_dir, output_folder = prepare_paths(config)
 
     # 1) Extract & separate audio
-    audio = extract_audio(video_path, base_dir)
-    vocals, background = separate_vocals(audio, base_dir)
-    background = "data/processed/video_2/separated_audio/background.wav"  # For testing purposes
+    # audio = extract_audio(video_path, base_dir)
+    # vocals, background = separate_vocals(audio, base_dir)
+    vocals = "data/processed/video_21/separated_audio/vocals.wav"
 
     # 2) Transcribe & translate vocals
-    transcript, language = transcribe(vocals, base_dir)
-    diarization = speaker_diarization(str(vocals), assembly_key, base_dir)
-    full_transcript = align_speaker_labels(transcript, diarization, base_dir)
-    translate(full_transcript, "EN", config.translation.target_language, deepl_key)
-    
-    # 3) TTS, stretch, build references, voice conversion
-    split_audio_by_utterance(full_transcript, vocals, base_dir)
-    build_all_reference_audios(base_dir, reference_window=2)
-    tts(full_transcript, base_dir)
-    time_stretch_tts(base_dir, full_transcript)
-    process_all_voice_conversions(base_dir)
-    full_transcript = "data/processed/video_2/transcript.json"  # For testing purposes
+    # transcript, language = transcribe(vocals, base_dir)
+    # diarization = speaker_diarization(str(vocals), assembly_key, base_dir)
+    # full_transcript = align_speaker_labels(transcript, diarization, base_dir)
+    # translate(full_transcript, "EN", config.translation.target_language, deepl_key)
+    full_transcript = "data/processed/video_21/transcript.json"
 
-    # # 4) Remix background, mix vocals & background, combine audio with video
-    # background_mix = mix_background_audio(full_transcript, audio, background, base_dir)
+    # 3) TTS, stretch, build references, voice conversion
+    #split_audio_by_utterance(full_transcript, vocals, base_dir)
+    #build_all_reference_audios(base_dir, reference_window=2)
+    #tts(full_transcript, base_dir)
+    #time_stretch_tts(base_dir, full_transcript)
+    process_all_voice_conversions(base_dir)
+
+    # 4) Remix background, mix vocals & background, combine audio with video
     final_audio = combine_audio(base_dir, background, full_transcript)
     output_video = output_folder / f"{video_path.stem}_dubbed.mp4"
     mix_audio_with_video(video_path, final_audio, output_video)
