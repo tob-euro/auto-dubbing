@@ -164,7 +164,6 @@ def time_stretch_tts(base_dir: str, transcript_path: str):
     logger.info("Time-stretching complete for %d speakers", len(by_speaker))
 
 
-
 def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir: str):
     """
     Split a vocals WAV into per-utterance WAVs based on speaker turns in transcript.
