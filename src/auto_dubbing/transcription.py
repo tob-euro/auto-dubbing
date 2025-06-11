@@ -21,6 +21,7 @@ os.environ["KMP_WARNINGS"] = "FALSE"
 # Create logger
 logger = logging.getLogger(__name__)
 
+
 def extend_short_segments(segments, min_duration=0.5):
     for seg in segments:
         dur = seg.end - seg.start
@@ -104,6 +105,35 @@ def transcribe(audio_path: Path, output_dir: Path) -> str:
     return str(output_path), language_code
 
 
+def transcribe_baseline(audio_path: Path, output_dir: Path) -> str:
+    logger.info("Starting Whisper transcription on %s", audio_path)
+
+    # setup model
+    model = stable_whisper.load_model('large')
+
+    result = model.transcribe(str(audio_path), vad=True, min_word_dur=0.3, vad_threshold=0.45, nonspeech_error=0.25)
+
+    # Convert segments to a list of dictionaries
+    transcription = [
+        {
+            "start": round(seg.start, 2),
+            "end": round(seg.end, 2),
+            "text": seg.text.strip()
+        }
+        for seg in result.segments
+    ]
+
+    # Write JSON output to output directory
+    output_path = output_dir / "whisper_baseline.json"
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(transcription, f, ensure_ascii=False, indent=2)
+
+    logger.info("Whisper transcription saved to %s", output_path)
+
+    return str(output_path)
+
+
+
 def speaker_diarization(audio_file: str, auth_key: str, output_dir: str) -> tuple[str, str | None]:
     """
     Run AssemblyAI diarization and write result to 'diarization.json'.
@@ -123,7 +153,7 @@ def speaker_diarization(audio_file: str, auth_key: str, output_dir: str) -> tupl
     # Setup AssemblyAI diarization
     aai.settings.api_key = auth_key
     transcriber = aai.Transcriber()
-    config = aai.TranscriptionConfig(speaker_labels=True, language_detection=True)
+    config = aai.TranscriptionConfig(speaker_labels=True, speakers_expected=4, language_detection=True)
     diarization = transcriber.transcribe(audio_file, config=config)
 
     # Extract speaker labels and timestamps in seconds into a list of dictionaries
@@ -131,6 +161,7 @@ def speaker_diarization(audio_file: str, auth_key: str, output_dir: str) -> tupl
     for utterance in diarization.utterances:
         utterance_data.append({
             "Speaker": utterance.speaker,
+            "Text": utterance.text.strip(),
             "Start": round(utterance.start / 1000, 3),
             "End": round(utterance.end / 1000, 3),
         })
@@ -252,3 +283,16 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
         json.dump(transcript, f, ensure_ascii=False, indent=2)
     
     logger.info("Updated transcription with translations at %s", transcript_path)
+
+# main function to test speaker diarization
+def main():
+    audio_path = Path("data/processed/Video_19/separated_audio/vocals.wav")
+    output_dir = Path("")
+    auth_key = "6dfee901a65e46569c33c517749dd225"
+
+    # Run speaker diarization
+    speaker_diarization(str(audio_path), auth_key, str(output_dir))
+
+# run main
+if __name__ == "__main__":
+    main()

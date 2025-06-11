@@ -104,33 +104,21 @@ def separate_vocals(input_audio: str, output_dir: str) -> tuple[str, str]:
 def combine_audio(base_dir: str, background_audio_path: str, transcript_path: str) -> str:
     """
     Overlays voice-converted clips onto the background track and writes the final mix.
-
-    Args:
-        base_dir:               Base directory where final mix will be written.
-        background_audio_path:  Path to your background WAV.
-        transcript_path:        Full path to the transcript JSON.
-
-    Returns:
-        The full path to the final mixed WAV file.
     """
     logger.info("Starting audio combination…")
 
-    # Load transcript
     if not os.path.isfile(transcript_path):
         raise FileNotFoundError(f"Transcript not found: {transcript_path}")
     with open(transcript_path, "r", encoding="utf-8") as f:
         transcript = json.load(f)
 
-    # Load background track
     final_audio = AudioSegment.from_file(background_audio_path)
     os.makedirs(base_dir, exist_ok=True)
 
-    # Overlay each VC clip
     speaker_counts: dict[str, int] = {}
     for utt in transcript:
-        speaker   = utt["speaker"]
+        speaker = utt["speaker"]
         start = int(utt["start"] * 1000)
-        duration = int((utt["end"] - utt["start"]) * 1000)
 
         speaker_counts[speaker] = speaker_counts.get(speaker, 0) + 1
         idx = speaker_counts[speaker]
@@ -139,23 +127,23 @@ def combine_audio(base_dir: str, background_audio_path: str, transcript_path: st
             base_dir,
             "speaker_audio",
             f"speaker_{speaker}",
-            "tts_vc",
-            f"{speaker}_utt_{idx:02d}_vc.wav"
+            "tts_vc_stretched",  # use stretched!
+            f"{speaker}_utt_{idx:02d}_vc_stretched.wav"
         )
 
         if not os.path.isfile(vc_path):
             logger.warning("Missing VC clip %s, skipping…", vc_path)
             continue
 
-        clip = AudioSegment.from_file(vc_path)[:duration]
+        clip = AudioSegment.from_file(vc_path)
         final_audio = final_audio.overlay(clip, position=start)
 
-    # Export final mix
     output_wav = os.path.join(base_dir, "final_mix.wav")
     final_audio.export(output_wav, format="wav")
     logger.info("Final mix → %s", output_wav)
 
     return output_wav
+
 
 
 def mix_audio_with_video(video_path: str, audio_path: str, output_video_path: str) -> str:

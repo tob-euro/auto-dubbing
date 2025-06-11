@@ -3,6 +3,7 @@ import json
 import logging
 import shutil
 import subprocess
+import tempfile
 from io import BytesIO
 from google.cloud import texttospeech
 from pydub import AudioSegment
@@ -99,8 +100,17 @@ def tts(transcript_path: str, output_dir: str, language_code: str = "da-DK",voic
     logger.info("TTS synthesis complete for %d utterances", len(transcript))
 
 
-def time_stretch_tts(base_dir: str, transcript_path: str):
-    logger.info("Time-stretching TTS utterances")
+def convert_to_pcm16(input_path: str, output_path: str):
+    """
+    Ensures WAV file is 16-bit PCM. Uses ffmpeg via PyDub.
+    """
+    audio = AudioSegment.from_file(input_path)
+    audio = audio.set_sample_width(2)  # 16-bit
+    audio.export(output_path, format="wav")
+
+
+def time_stretch_vc(base_dir: str, transcript_path: str):
+    logger.info("Time-stretching VC utterances")
 
     with open(transcript_path, "r", encoding="utf-8") as f:
         transcript = json.load(f)
@@ -112,25 +122,25 @@ def time_stretch_tts(base_dir: str, transcript_path: str):
     for speaker_id, utts in by_speaker.items():
         logger.info("Processing speaker %s (%d utterances)", speaker_id, len(utts))
 
-        tts_dir       = os.path.join(base_dir, "speaker_audio", f"speaker_{speaker_id}", "tts")
-        stretched_dir = os.path.join(base_dir, "speaker_audio", f"speaker_{speaker_id}", "tts_stretched")
+        vc_dir        = os.path.join(base_dir, "speaker_audio", f"speaker_{speaker_id}", "tts_vc")
+        stretched_dir = os.path.join(base_dir, "speaker_audio", f"speaker_{speaker_id}", "tts_vc_stretched")
         os.makedirs(stretched_dir, exist_ok=True)
 
-        MIN_RATIO = 0.5
-        MAX_RATIO = 1.5
+        MIN_RATIO = 0.75
+        MAX_RATIO = 1.25
 
         for idx, utterance in enumerate(utts, start=1):
             target_ms = int((utterance["end"] - utterance["start"]) * 1000)
-            src_path  = os.path.join(tts_dir, f"{speaker_id}_utt_{idx:02d}.wav")
-            out_path  = os.path.join(stretched_dir, f"{speaker_id}_utt_{idx:02d}_stretched.wav")
+            src_path  = os.path.join(vc_dir, f"{speaker_id}_utt_{idx:02d}_vc.wav")
+            out_path  = os.path.join(stretched_dir, f"{speaker_id}_utt_{idx:02d}_vc_stretched.wav")
 
             if not os.path.exists(src_path):
-                logger.warning("Missing audio file: %s", src_path)
+                logger.warning("Missing VC file: %s", src_path)
                 continue
 
             orig = AudioSegment.from_file(src_path)
             if len(orig) == 0:
-                logger.warning("Skipping empty audio file: %s", src_path)
+                logger.warning("Skipping empty VC file: %s", src_path)
                 continue
 
             ratio = target_ms / len(orig)
@@ -142,26 +152,23 @@ def time_stretch_tts(base_dir: str, transcript_path: str):
                     src_path, ratio, clamped_ratio, target_ms, len(orig)
                 )
 
-            # Stretch audio using your stretch_audio function
-            stretch_audio(src_path, out_path, ratio=clamped_ratio)
+            # Convert to PCM temp file
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp_path = tmp.name
+            convert_to_pcm16(src_path, tmp_path)
+            stretch_audio(tmp_path, out_path, ratio=clamped_ratio)
+            os.remove(tmp_path)
 
             if not os.path.exists(out_path):
-                logger.error("Stretched audio not found: %s", out_path)
+                logger.error("Stretched VC audio not found: %s", out_path)
                 continue
 
-            stretched = AudioSegment.from_file(out_path)
-            trimmed = stretched[:target_ms]
+            logger.info("Exported stretched VC audio: %s", out_path)
 
-            # Warn if final duration is significantly short
-            if len(trimmed) < 0.9 * target_ms:
-                logger.warning(
-                    "Trimmed audio is short (%dms < %dms) for %s",
-                    len(trimmed), target_ms, out_path
-                )
+    logger.info("VC time-stretching complete.")
 
-            trimmed.export(out_path, format="wav")
 
-    logger.info("Time-stretching complete for %d speakers", len(by_speaker))
+
 
 
 def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir: str):
@@ -292,21 +299,17 @@ def voice_conversion(source: str, target: str, output_dir: str):
 
 def process_all_voice_conversions(base_dir: str):
     """
-    Perform Seed-VC voice conversion using prebuilt reference audio.
+    Perform Seed-VC voice conversion using TTS outputs and prebuilt reference audio.
 
-    Expects the following directory structure:
-        speaker_audio/speaker_{X}/tts_stretched/{X}_utt_{XX}_stretched.wav
+    Expects:
+        speaker_audio/speaker_{X}/tts/{X}_utt_{XX}.wav
         speaker_audio/speaker_{X}/references/{X}_utt_{XX}_ref.wav
 
     Outputs:
         speaker_audio/speaker_{X}/tts_vc/{X}_utt_{XX}_vc.wav
     """
     speaker_root = os.path.join(base_dir, "speaker_audio")
-    logger.info("Running voice conversion using prebuilt references under %s", speaker_root)
-
-    if not os.path.isdir(speaker_root):
-        logger.error("Expected speaker_audio directory at %s not found", speaker_root)
-        return
+    logger.info("Running voice conversion using references under %s", speaker_root)
 
     for entry in os.listdir(speaker_root):
         if not entry.startswith("speaker_"):
@@ -315,26 +318,26 @@ def process_all_voice_conversions(base_dir: str):
         spk = entry.split("_", 1)[1]
         spk_dir = os.path.join(speaker_root, entry)
 
-        stretched_dir = os.path.join(spk_dir, "tts_stretched")
-        ref_dir       = os.path.join(spk_dir, "references")
-        vc_dir        = os.path.join(spk_dir, "tts_vc")
+        tts_dir = os.path.join(spk_dir, "tts")
+        ref_dir = os.path.join(spk_dir, "references")
+        vc_dir  = os.path.join(spk_dir, "tts_vc")
 
-        if not os.path.isdir(stretched_dir) or not os.path.isdir(ref_dir):
+        if not os.path.isdir(tts_dir) or not os.path.isdir(ref_dir):
             logger.warning("Missing required directories for speaker %s, skipping", spk)
             continue
         os.makedirs(vc_dir, exist_ok=True)
 
         files = sorted([
-            f for f in os.listdir(stretched_dir)
-            if f.startswith(f"{spk}_utt_") and f.endswith("_stretched.wav")
+            f for f in os.listdir(tts_dir)
+            if f.startswith(f"{spk}_utt_") and f.endswith(".wav")
         ])
         if not files:
-            logger.warning("No stretched files for speaker %s", spk)
+            logger.warning("No TTS files for speaker %s", spk)
             continue
 
         for idx, fname in enumerate(files, start=1):
             utt_id = f"{spk}_utt_{idx:02d}"
-            src    = os.path.join(stretched_dir, fname)
+            src    = os.path.join(tts_dir, fname)
             ref    = os.path.join(ref_dir, f"{utt_id}_ref.wav")
 
             if not os.path.isfile(ref):
@@ -361,3 +364,4 @@ def process_all_voice_conversions(base_dir: str):
             shutil.rmtree(temp_out, ignore_errors=True)
 
     logger.info("Voice conversion complete.")
+
