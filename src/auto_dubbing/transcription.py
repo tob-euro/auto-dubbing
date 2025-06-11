@@ -1,13 +1,14 @@
 import os
 import json
 import logging
+import warnings
 from pathlib import Path
 import time
 import deepl
 import stable_whisper
-import whisper
 import assemblyai as aai
 
+import whisper
 
 # Silence httpx and assemblyai logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -15,11 +16,25 @@ logging.getLogger("assemblyai").setLevel(logging.WARNING)
 # Silence DeepL client
 logging.getLogger("deepl").setLevel(logging.WARNING)
 
+# Suppress specific warnings from stable-whisper
+warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
+os.environ["KMP_WARNINGS"] = "FALSE"
+
 # Create logger
 logger = logging.getLogger(__name__)
 
+def extend_short_segments(segments, min_duration=0.5):
+    for seg in segments:
+        dur = seg.end - seg.start
+        if dur < min_duration:
+            # Stretch to minimum, center on original midpoint
+            mid = (seg.start + seg.end) / 2
+            seg.start = max(0, mid - min_duration / 2)
+            seg.end = mid + min_duration / 2
+    return segments
 
-def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3") -> str:
+
+def transcribe(audio_path: Path, output_dir: Path) -> str:
     """
     Transcribe 'audio_path' using OpenAI Whisper and write output to 'whisper.json'.
 
@@ -32,42 +47,58 @@ def transcribe(audio_path: Path, output_dir: Path, model_name: str = "large-v3")
         str: Path to the output JSON file.
     """
     logger.info("Starting Whisper transcription on %s", audio_path)
-    model = whisper.load_model("large-v3-turbo")
-    # result = model.transcribe(str(audio_path), regroup=False, vad=True)
 
-    # (
-    #     result
-    #     .ignore_special_periods()
-    #     .clamp_max()
-    #     .split_by_punctuation([('.', ' '), '。', '?', '？'])
-    #     .split_by_gap(.5)
-    #     .clamp_max()
-    # )
+    # setup model
+    model = stable_whisper.load_model("large-v3")
 
-    # language_code = "en"
+    # Run word-leveltranscription
+    result = model.transcribe(
+        str(audio_path),
+        vad=True,
+        vad_threshold=0.45,
+        min_word_dur=0.3,
+        nonspeech_error=0.25,
+        regroup=False,
+        verbose=None
+    )
 
-    # transcription = [
-    #     {
-    #         "start": round(seg.start, 2),
-    #         "end": round(seg.end, 2),
-    #         "text": seg.text.strip()
-    #     }
-    #     for seg in result.segments
-    # ]
-    result = model.transcribe(str(audio_path), verbose=False)
+    # Refine word-level timestamps
+    model.refine(
+        str(audio_path),
+        result,
+        word_level=False,
+        precision=0.15,
+        verbose=None
+    )
 
-    language_code = result["language"]
+    # Convert to segment-level transcription
+    (
+        result
+        .ignore_special_periods()
+        .clamp_max()
+        .split_by_punctuation([('.', ' '), '。', '?', '？'])
+        .split_by_gap(1.0)
+        .clamp_max()
+    )
 
+    result.segments = extend_short_segments(result.segments, min_duration=0.5)
+    # Save detected language
+    language_code = result.language
+
+
+
+    # Convert segments to a list of dictionaries
     transcription = [
         {
-            "start": round(seg["start"], 2),
-            "end": round(seg["end"], 2),
-            "text": seg["text"].strip()
+            "start": round(seg.start, 2),
+            "end": round(seg.end, 2),
+            "text": seg.text.strip()
         }
-        for seg in result["segments"]
+        for seg in result.segments
     ]
 
-    output_path = output_dir / "whisper_ts.json"
+    # Write JSON output to output directory
+    output_path = output_dir / "whisper.json"
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(transcription, f, ensure_ascii=False, indent=2)
 
@@ -174,10 +205,6 @@ def align_speaker_labels(whisper_path: str, diarization_path: str, output_dir: s
     logger.info("Final transcript saved to %s", transcript_path)
     logger.info("Discarded %d non-overlapping Whisper segments", discarded)
 
-    # Clean up intermediate files
-    #Path(whisper_path).unlink(missing_ok=True)
-    #Path(diarization_path).unlink(missing_ok=True)
-
     return str(transcript_path)
 
 
@@ -229,16 +256,3 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
         json.dump(transcript, f, ensure_ascii=False, indent=2)
     
     logger.info("Updated transcription with translations at %s", transcript_path)
-
-# main file to test transcribe function
-def main():
-    # Example usage
-    vocals = Path("data/processed/video_22/separated_audio/vocals.wav")
-    output_dir = Path("data/processed/video_22")
-    model_name = "large-v3"
-
-    # Transcribe the audio
-    transcribe(vocals, output_dir, model_name)
-
-if __name__ == "__main__":
-    main()

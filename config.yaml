@@ -4,14 +4,7 @@ paths:
   processed_folder: "${paths.data_root}/processed"
   output_folder: "${paths.data_root}/output"
   ground_truth_folder: "${paths.data_root}/ground_truth"
-  input_video: "${paths.input_folder}/video_19.mp4"
-
-models:
-  whisper:
-    model_name: "large-v3"
-
-  demucs:
-    model_name: "mdx_extra_q"
+  input_video: "${paths.input_folder}/video_6.mp4"
 
 translation:
   target_language: "DA"
