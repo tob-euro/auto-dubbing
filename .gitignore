@@ -5,6 +5,7 @@ seed-vc/
 ground_truth/
 whisper.ipynb
 autodubbing.ipynb
+run_evaluation.py
 
 # Output
 *.mp4

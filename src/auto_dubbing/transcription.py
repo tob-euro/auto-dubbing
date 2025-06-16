@@ -23,7 +23,18 @@ os.environ["KMP_WARNINGS"] = "FALSE"
 # Create logger
 logger = logging.getLogger(__name__)
 
+
 def extend_short_segments(segments, min_duration=0.5):
+    """
+    Extend segments with very low duration from whisper output.
+
+    Args:
+        segments (Whisper object): Result from transcribe containing segments.
+        min_duration (float): Minimum duration a segment is allowed to have.
+
+    Returns:
+        Whisper object: New Whisper object with extended segments.
+    """
     for seg in segments:
         dur = seg.end - seg.start
         if dur < min_duration:
@@ -36,7 +47,7 @@ def extend_short_segments(segments, min_duration=0.5):
 
 def transcribe(audio_path: Path, output_dir: Path) -> str:
     """
-    Transcribe 'audio_path' using OpenAI Whisper and write output to 'whisper.json'.
+    Transcribe 'audio_path' using Stable Whisper and write output to 'whisper.json'.
 
     Args:
         audio_path (Path): Path to the audio file.
@@ -66,7 +77,7 @@ def transcribe(audio_path: Path, output_dir: Path) -> str:
     model.refine(
         str(audio_path),
         result,
-        word_level=False,
+        word_level=True,
         precision=0.15,
         verbose=None
     )
@@ -127,7 +138,7 @@ def speaker_diarization(audio_file: str, auth_key: str, output_dir: str) -> tupl
     # Setup AssemblyAI diarization
     aai.settings.api_key = auth_key
     transcriber = aai.Transcriber()
-    config = aai.TranscriptionConfig(speaker_labels=True, language_detection=True)
+    config = aai.TranscriptionConfig(speaker_labels=True, speakers_expected=4, language_detection=True)
     diarization = transcriber.transcribe(audio_file, config=config)
 
     # Extract speaker labels and timestamps in seconds into a list of dictionaries
@@ -135,6 +146,7 @@ def speaker_diarization(audio_file: str, auth_key: str, output_dir: str) -> tupl
     for utterance in diarization.utterances:
         utterance_data.append({
             "Speaker": utterance.speaker,
+            "Text": utterance.text.strip(),
             "Start": round(utterance.start / 1000, 3),
             "End": round(utterance.end / 1000, 3),
         })
@@ -205,8 +217,6 @@ def align_speaker_labels(whisper_path: str, diarization_path: str, output_dir: s
     logger.info("Final transcript saved to %s", transcript_path)
     logger.info("Discarded %d non-overlapping Whisper segments", discarded)
 
-    return str(transcript_path)
-
 
 def translate(transcript_path: str, source_language: str, target_language: str, auth_key: str) -> None:
     """
@@ -214,10 +224,10 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
     with exponential backoff in case of rate limits. Writes the updated JSON back to the same file.
 
     Args:
-        transcript_path:    Path to transcription JSON (list of utterance dicts).
-        source_language:    DeepL source language code (e.g. "EN").
-        target_language:    DeepL target language code (e.g. "DK").
-        auth_key:           DeepL API authentication key.
+        transcript_path (str):    Path to transcription JSON (list of utterance dicts).
+        source_language (str):    DeepL source language code (e.g. "EN").
+        target_language (str):    DeepL target language code (e.g. "DK").
+        auth_key (str):           DeepL API authentication key.
     """
     logger.info("Translating %s from %s → %s via DeepL", transcript_path, source_language, target_language)    
     translator = deepl.Translator(auth_key)
@@ -256,3 +266,57 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
         json.dump(transcript, f, ensure_ascii=False, indent=2)
     
     logger.info("Updated transcription with translations at %s", transcript_path)
+    
+
+def merge_segments(base_dir, max_gap=0.45):
+    """
+    Merge segments close to each other with same speaker in a transcript from a JSON file.
+    Writes output transcript to a new JSON file ("transcript_con.json") 
+
+    Args:
+        base_dir (Path):    Path to base directory of video (data/processed/video_x).
+        max_gap (float):    Gap between segments with same speaker lower than max_gap will be merged.
+    
+    Returns:
+        str: Path to the final transcript JSON file.
+    """
+
+    input_path = os.path.join(base_dir, "transcript.json")
+    output_path = os.path.join(base_dir, "transcript_con.json")
+
+    with open(input_path, "r", encoding="utf-8") as f:
+        segments = json.load(f)
+
+    merged_segments = []
+    prev = segments[0]
+
+    for curr in segments[1:]:
+        time_gap = curr["start"] - prev["end"]
+        if curr["speaker"] == prev["speaker"] and time_gap < max_gap:
+            # Merge current segment into previous
+            prev["end"] = curr["end"]
+            prev["text"] = prev["text"].rstrip() + " " + curr["text"].lstrip()
+        else:
+            merged_segments.append(prev)
+            prev = curr
+    merged_segments.append(prev)  # Don't forget the last one
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(merged_segments, f, indent=2, ensure_ascii=False)
+
+    logger.info(f"Merged transcript written to {output_path}")
+
+    return str(output_path)
+
+# main function to test speaker diarization
+def main():
+    audio_path = Path("data/processed/Video_19/separated_audio/vocals.wav")
+    output_dir = Path("")
+    auth_key = "6dfee901a65e46569c33c517749dd225"
+
+    # Run speaker diarization
+    speaker_diarization(str(audio_path), auth_key, str(output_dir))
+
+# run main
+if __name__ == "__main__":
+    main()
