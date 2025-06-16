@@ -2,10 +2,6 @@
 data/
 checkpoints/
 seed-vc/
-ground_truth/
-whisper.ipynb
-autodubbing.ipynb
-run_evaluation.py
 
 # Output
 *.mp4
@@ -15,7 +11,6 @@ run_evaluation.py
 # Secrets
 .env
 gcp_key.json
-dtumlops-448114-5aa70f0364ab.json
 
 # Editor/OS
 .vscode/
