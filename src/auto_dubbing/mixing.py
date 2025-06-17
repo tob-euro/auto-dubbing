@@ -73,7 +73,7 @@ def separate_vocals(input_audio: str, output_dir: str) -> tuple[str, str]:
         "--out", output_dir,
         input_audio
     ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(cmd, check=True)
 
     # Locate the temporary model folder
     model_dir = os.path.join(output_dir, model)
@@ -104,6 +104,14 @@ def separate_vocals(input_audio: str, output_dir: str) -> tuple[str, str]:
 def combine_audio(base_dir: str, background_audio_path: str, transcript_path: str) -> str:
     """
     Overlays voice-converted clips onto the background track and writes the final mix.
+
+    Args:
+        base_dir: Base directory for processed outputs.
+        background_audio_path:  Path to background audio WAV.
+        transcript_path:    Path to transcript JSON.
+
+    Returns:
+        Path to final combined audio "final_mix.wav".
     """
     logger.info("Starting audio combination…")
 

@@ -56,7 +56,7 @@ def run_pipeline() -> None:
 
     # 1) Extract & separate audio
     audio = extract_audio(video_path, base_dir)
-    vocals, background = separate_vocals(audio, base_dir)
+    vocals, background = separate_vocals(audio, str(base_dir))
 
     # 2) Transcribe & translate vocals
     transcript, language = transcribe(vocals, base_dir)
