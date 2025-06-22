@@ -14,22 +14,25 @@ logger = logging.getLogger(__name__)
 
 def trim_vc_start(base_dir: str, frames_to_trim: int = 3, fps: int = 30):
     """
-    Trims the first few frames from each VC utterance to remove potential noise.
+    Trim the first few frames (converted to milliseconds) from the start of each voice-converted (VC) utterance WAV file to remove potential noise.
 
     Args:
-        base_dir: Path to the root directory containing speaker_audio/*/tts_vc.
-        frames_to_trim: Number of video frames to trim from start (default 3).
-        fps: Frame rate of the source video (default 30).
+        base_dir (str): Path to the root directory containing 'speaker_audio/*/tts_vc' folders.
+        frames_to_trim (int): Number of video frames to trim from the start of each audio file (default: 3).
+        fps (int): Frame rate of the source video, used to calculate trim duration in milliseconds (default: 30).
     """
+    # Calculate trim time in miliseconds
     trim_ms = int((frames_to_trim / fps) * 1000)
     logger.info("Trimming %dms (%d frames at %dfps) from VC utterance starts", trim_ms, frames_to_trim, fps)
 
+    # Go through all speakers
     speaker_dir = os.path.join(base_dir, "speaker_audio")
     for speaker in os.listdir(speaker_dir):
         vc_dir = os.path.join(speaker_dir, speaker, "tts_vc")
         if not os.path.isdir(vc_dir):
             continue
 
+        # Go through and trim alle VC audiofiles
         for fname in os.listdir(vc_dir):
             if not fname.endswith(".wav"):
                 continue
@@ -43,17 +46,20 @@ def trim_vc_start(base_dir: str, frames_to_trim: int = 3, fps: int = 30):
 
 def trim_trailing_silence(audio: AudioSegment, silence_thresh: int = -40, chunk_size: int = 10) -> AudioSegment:
     """
-    Trim silence from the end of the audio.
+    Trim trailing silence from the end of an AudioSegment.
 
     Args:
-        audio:         AudioSegment object.
-        silence_thresh: Silence threshold in dBFS. Anything quieter is considered silence.
-        chunk_size:    How many ms to scan at a time (higher = faster but less precise).
+        audio (AudioSegment):        The audio to process.
+        silence_thresh (int):        Silence threshold in dBFS; anything quieter is considered silence.
+        chunk_size (int):            Number of milliseconds to scan at a time (higher = faster, less precise).
 
     Returns:
-        Trimmed AudioSegment.
+        AudioSegment: The trimmed audio segment with trailing silence removed.
     """
+    # Initialize trim counter
     trim_ms = 0
+    
+    # Scan audio from the end in chunks
     while trim_ms < len(audio):
         chunk = audio[-(trim_ms + chunk_size): -trim_ms if trim_ms > 0 else None]
         if chunk.dBFS > silence_thresh:
@@ -67,21 +73,22 @@ def trim_trailing_silence(audio: AudioSegment, silence_thresh: int = -40, chunk_
 
 def tts(transcript_path: str, output_dir: str, language_code: str = "da-DK",voice_name: str = "da-DK-Neural2-D", gender: texttospeech.SsmlVoiceGender = texttospeech.SsmlVoiceGender.FEMALE):
     """
-    Read a transcription JSON and synthesize each utterance to a WAV.
+    Read a transcription JSON and synthesize each utterance to a WAV file using Google Cloud Text-to-Speech.
+    Each utterance must have a "translation" field. Output WAV files are organized by speaker in subfolders.
 
     Args:
-        transcript_path: Path to transcription JSON.
-        output_dir:      Base folder where speaker_{X}/tts/ lives.
-        language_code:   Language code for TTS (defaults to Danish).
-        voice_name:      Specific Google voice name.
-        gender:          SSML gender selection.
+    transcript_path (str): Path to the transcription JSON file (each utterance must have a "translation" field).
+    output_dir (str):      Base folder where speaker_{X}/tts/ subfolders will be created.
+    language_code (str):   Language code for TTS (defaults to Danish, "da-DK").
+    voice_name (str):      Specific Google voice name.
+    gender (texttospeech.SsmlVoiceGender): SSML gender selection.
 
     Returns:
-        A dict mapping each speaker label (e.g. "A") → list of generated WAV paths.
+        dict: A mapping from each speaker label (e.g. "A") to a list of generated WAV file paths.
     """
     logger.info("Loading transcript from %s", transcript_path)
 
-    # Load JSON
+    # Load JSON transcript
     with open(transcript_path, "r", encoding="utf-8") as f:
         transcript = json.load(f)
 
@@ -91,7 +98,7 @@ def tts(transcript_path: str, output_dir: str, language_code: str = "da-DK",voic
         raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS must point to your GCP JSON key")
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds
 
-    # Setup TTS client
+    # Setup TTS client and voice
     client = texttospeech.TextToSpeechClient()
     voice = texttospeech.VoiceSelectionParams(
         language_code=language_code,
@@ -132,7 +139,14 @@ def tts(transcript_path: str, output_dir: str, language_code: str = "da-DK",voic
 
 def convert_to_pcm16(input_path: str, output_path: str):
     """
-    Ensures WAV file is 16-bit PCM. Uses ffmpeg via PyDub.
+    Convert an audio file to 16-bit PCM WAV format using PyDub and ffmpeg.
+
+    Args:
+        input_path (str): Path to the input audio file.
+        output_path (str): Path to save the converted 16-bit PCM WAV file.
+
+    Returns:
+        None
     """
     audio = AudioSegment.from_file(input_path)
     audio = audio.set_sample_width(2)  # 16-bit
@@ -151,16 +165,20 @@ def time_stretch_vc(base_dir: str, transcript_path: str):
 
     logger.info("Time-stretching VC utterances")
 
+    # Load the transcript JSON file
     with open(transcript_path, "r", encoding="utf-8") as f:
         transcript = json.load(f)
 
+    # Group utterances by speaker
     by_speaker: dict[str, list[dict]] = {}
     for utterance in transcript:
         by_speaker.setdefault(utterance["speaker"], []).append(utterance)
 
+    # Process each speaker separately
     for speaker_id, utts in by_speaker.items():
         logger.info("Processing speaker %s (%d utterances)", speaker_id, len(utts))
 
+        # Define input and output directories for this speaker
         vc_dir        = os.path.join(base_dir, "speaker_audio", f"speaker_{speaker_id}", "tts_vc")
         stretched_dir = os.path.join(base_dir, "speaker_audio", f"speaker_{speaker_id}", "tts_vc_stretched")
         os.makedirs(stretched_dir, exist_ok=True)
@@ -168,36 +186,44 @@ def time_stretch_vc(base_dir: str, transcript_path: str):
         MIN_RATIO = 0.75
         MAX_RATIO = 1.25
 
+        # Process each utterance for this speaker
         for idx, utterance in enumerate(utts, start=1):
+            # Calculate the target duration in milliseconds
             target_ms = int((utterance["end"] - utterance["start"]) * 1000)
             src_path  = os.path.join(vc_dir, f"{speaker_id}_utt_{idx:02d}_vc.wav")
             out_path  = os.path.join(stretched_dir, f"{speaker_id}_utt_{idx:02d}_vc_stretched.wav")
 
+            # Skip if the source file does not exist
             if not os.path.exists(src_path):
                 logger.warning("Missing VC file: %s", src_path)
                 continue
-
+            
+            # Load the original VC audio
             orig = AudioSegment.from_file(src_path)
             if len(orig) == 0:
                 logger.warning("Skipping empty VC file: %s", src_path)
                 continue
 
+            # Calculate and clamp the stretch ratio
             ratio = target_ms / len(orig)
             clamped_ratio = max(MIN_RATIO, min(MAX_RATIO, ratio))
 
+            # Log if the ratio was clamped
             if clamped_ratio != ratio:
                 logger.warning(
                     "Clamping stretch ratio for %s: %.2f -> %.2f (target=%dms, orig=%dms)",
                     src_path, ratio, clamped_ratio, target_ms, len(orig)
                 )
 
-            # Convert to PCM temp file
+            # Convert to PCM16 WAV (required by stretch_audio)
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp_path = tmp.name
             convert_to_pcm16(src_path, tmp_path)
+            # Perform time-stretching and export the result
             stretch_audio(tmp_path, out_path, ratio=clamped_ratio)
             os.remove(tmp_path)
-
+            
+            # Check if output was created
             if not os.path.exists(out_path):
                 logger.error("Stretched VC audio not found: %s", out_path)
                 continue
@@ -209,24 +235,30 @@ def time_stretch_vc(base_dir: str, transcript_path: str):
 
 def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir: str):
     """
-    Split a vocals WAV into per-utterance WAVs based on speaker turns in transcript.
+    Split a vocals WAV file into per-utterance WAVs based on speaker turns and timestamps in the transcript.
+    Each utterance in the transcript must have 'speaker', 'start', and 'end' fields.
+    Output WAV files are organized by speaker in subfolders.
 
     Args:
-        transcript_path: Path to the JSON file containing utterances.
-        vocals_path:     Path to the vocals WAV.
-        output_dir:      Directory where speaker_audio/speaker_{X}/utterances/ will be created.
+        transcript_path (str): Path to the JSON file containing utterances (with 'speaker', 'start', and 'end' fields).
+        vocals_path (str):     Path to the vocals WAV file.
+        output_dir (str):      Directory where speaker_audio/speaker_{X}/utterances/ will be created.
     """
     logger.info("Splitting audio by utterances")
 
+    # Load transcript and audio
     with open(transcript_path, "r", encoding="utf-8") as f:
         transcript = json.load(f)
     vocals = AudioSegment.from_wav(vocals_path)
 
+    # Prepare output directory
     speaker_root = os.path.join(output_dir, "speaker_audio")
     os.makedirs(speaker_root, exist_ok=True)
 
+    # Initialize speaker utterance counters
     speaker_counts: dict[str, int] = {}
 
+    # Iterate over utterances
     for i, utterance in enumerate(transcript):
         speaker_id = utterance["speaker"]
         start_ms = int(utterance["start"] * 1000)
@@ -239,6 +271,7 @@ def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir:
         else:
             diff = len(vocals) - end_ms
             end_ms += min(500, diff)
+        
         seg = vocals[start_ms:end_ms]
 
         speaker_dir = os.path.join(speaker_root, f"speaker_{speaker_id}", "utterances")
@@ -257,19 +290,21 @@ def split_audio_by_utterance(transcript_path: str, vocals_path: str, output_dir:
 
 def build_all_reference_audios(base_dir: str, reference_window: int = 1):
     """
-    Build all reference audios for each utterance using a window of neighboring utterances.
+    Build reference audio files for each utterance by concatenating the utterance with its neighboring utterances within a specified window.
+    Reference audio files are saved in a 'references' subfolder for each speaker.
 
     Args:
-        base_dir: Root directory containing speaker_audio folders.
-        reference_window: Number of neighboring utterances before and after to include.
+        base_dir (str): Root directory containing 'speaker_audio' folders.
+        reference_window (int): Number of neighboring utterances before and after to include for each reference audio.
     """
     speaker_root = os.path.join(base_dir, "speaker_audio")
     logger.info("Building reference audio for all speakers in %s", speaker_root)
 
+    # Go through all speaker folders
     for entry in os.listdir(speaker_root):
         if not entry.startswith("speaker_"):
             continue
-
+    
         spk = entry.split("_", 1)[1]
         spk_dir = os.path.join(speaker_root, entry)
         utt_dir = os.path.join(spk_dir, "utterances")
@@ -280,11 +315,13 @@ def build_all_reference_audios(base_dir: str, reference_window: int = 1):
             continue
         os.makedirs(ref_dir, exist_ok=True)
 
+        # Find all utterance files for the speaker
         files = sorted([
             f for f in os.listdir(utt_dir)
             if f.startswith(f"{spk}_utt_") and f.endswith(".wav")
         ])
 
+        # For each utterance, build a reference file
         for idx, fname in enumerate(files):
             utt_id = f"{spk}_utt_{idx+1:02d}"
             idx_int = idx + 1
@@ -302,7 +339,8 @@ def build_all_reference_audios(base_dir: str, reference_window: int = 1):
             if not ref_paths:
                 logger.warning("No valid references for %s", utt_id)
                 continue
-
+            
+            # Combine and save the reference file
             combined = AudioSegment.empty()
             for ref in ref_paths:
                 combined += AudioSegment.from_wav(ref)
@@ -315,12 +353,16 @@ def build_all_reference_audios(base_dir: str, reference_window: int = 1):
 
 def voice_conversion(source: str, target: str, output_dir: str):
     """
-    Performs voice conversion on source file using seed-vc.
+    Perform voice conversion on a source audio file using seed-vc, making the source sound like the target speaker.
+    Runs the seed-vc inference script as a subprocess and saves the converted audio to the specified output directory.
 
     Args:
-        source: Path to source audio file (tts segment).
-        target: Path to target audio file (original speaker segment).
-        output_dir: Path to directory where voice converted segments will be written.
+        source (str): Path to the source audio file (e.g., TTS segment to convert).
+        target (str): Path to the target audio file (original speaker segment).
+        output_dir (str): Directory where the voice-converted audio will be saved.
+
+    Raises:
+        subprocess.CalledProcessError: If the seed-vc inference subprocess fails.
     """
     load_dotenv()
     python_executable = os.environ["SEED_VC_PYTHON_PATH"]
@@ -341,6 +383,7 @@ def voice_conversion(source: str, target: str, output_dir: str):
         "--inference-cfg-rate", "0.7"
     ]
 
+    # Run the command and handle errors
     try:
         subprocess.run(command, check=True, capture_output=True, text=True, encoding="utf-8")
     except subprocess.CalledProcessError as e:
@@ -352,22 +395,27 @@ def voice_conversion(source: str, target: str, output_dir: str):
 
 def process_all_voice_conversions(base_dir: str):
     """
-    Perform Seed-VC voice conversion using TTS outputs and prebuilt reference audio.
+    Perform Seed-VC voice conversion for all speakers using TTS outputs and prebuilt reference audio.
 
-    Expects:
-        speaker_audio/speaker_{X}/tts/{X}_utt_{XX}.wav
-        speaker_audio/speaker_{X}/references/{X}_utt_{XX}_ref.wav
+    For each speaker, expects:
+        speaker_audio/speaker_{X}/tts/{X}_utt_{XX}.wav         # TTS-generated utterances
+        speaker_audio/speaker_{X}/references/{X}_utt_{XX}_ref.wav  # Reference audio for each utterance
 
     Outputs:
-        speaker_audio/speaker_{X}/tts_vc/{X}_utt_{XX}_vc.wav
+        speaker_audio/speaker_{X}/tts_vc/{X}_utt_{XX}_vc.wav   # Voice-converted utterances
+
+    Args:
+        base_dir (str): Root directory containing the 'speaker_audio' folders.
     """
     speaker_root = os.path.join(base_dir, "speaker_audio")
     logger.info("Running voice conversion using references under %s", speaker_root)
 
+    # Go throgh all the speaker folders
     for entry in os.listdir(speaker_root):
         if not entry.startswith("speaker_"):
             continue
 
+        # Define paths
         spk = entry.split("_", 1)[1]
         spk_dir = os.path.join(speaker_root, entry)
 
@@ -380,6 +428,7 @@ def process_all_voice_conversions(base_dir: str):
             continue
         os.makedirs(vc_dir, exist_ok=True)
 
+        # Find alle TTS-files for the speaker
         files = sorted([
             f for f in os.listdir(tts_dir)
             if f.startswith(f"{spk}_utt_") and f.endswith(".wav")
@@ -387,7 +436,8 @@ def process_all_voice_conversions(base_dir: str):
         if not files:
             logger.warning("No TTS files for speaker %s", spk)
             continue
-
+        
+        # For each TTS-file, do voice conversion
         for idx, fname in enumerate(files, start=1):
             utt_id = f"{spk}_utt_{idx:02d}"
             src    = os.path.join(tts_dir, fname)

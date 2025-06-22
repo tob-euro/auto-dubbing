@@ -55,7 +55,7 @@ def transcribe(audio_path: Path, output_dir: Path) -> str:
         model_name (str): Whisper model to use.
 
     Returns:
-        str: Path to the output JSON file.
+        tuple[str, str]: Path to the output JSON file and detected language code.
     """
     logger.info("Starting Whisper transcription on %s", audio_path)
 
@@ -92,11 +92,10 @@ def transcribe(audio_path: Path, output_dir: Path) -> str:
         .clamp_max()
     )
 
+    # Extend short segments
     result.segments = extend_short_segments(result.segments, min_duration=0.5)
     # Save detected language
     language_code = result.language
-
-
 
     # Convert segments to a list of dictionaries
     transcription = [
@@ -129,19 +128,17 @@ def speaker_diarization(audio_file: str, auth_key: str, output_dir: str) -> tupl
         output_dir (str): Directory to save 'diarization.json'.
 
     Returns:
-        tuple[str, str | None]: 
-            - Path to diarization JSON file.
-            - Detected language code (or None).
+        str: Path to diarization JSON file.
     """
     logger.info("Starting AssemblyAI diarization on %s", audio_file)
 
     # Setup AssemblyAI diarization
     aai.settings.api_key = auth_key
     transcriber = aai.Transcriber()
-    config = aai.TranscriptionConfig(speaker_labels=True, speakers_expected=4, language_detection=True)
+    config = aai.TranscriptionConfig(speaker_labels=True, language_detection=True)
     diarization = transcriber.transcribe(audio_file, config=config)
 
-    # Extract speaker labels and timestamps in seconds into a list of dictionaries
+    # Extract speaker labels, text and timestamps in seconds into a list of dictionaries
     utterance_data = []
     for utterance in diarization.utterances:
         utterance_data.append({
@@ -182,15 +179,19 @@ def align_speaker_labels(whisper_path: str, diarization_path: str, output_dir: s
     with open(diarization_path, "r", encoding="utf-8") as f:
         diarization_segments = json.load(f)
 
+    # Initialise output files
     aligned = []
     discarded = 0
 
+    # Iterate over all Whisper segments with their index
     for w_index, w_seg in enumerate(whisper_segments):
+        # Get start and end time for the current Whisper segment
         w_start, w_end = w_seg["start"], w_seg["end"]
         max_overlap = 0
         best_speaker = None
         best_a_seg = None
 
+         # Iterate over all diarization segments to find the one with the largest overlap
         for a_seg in diarization_segments:
             a_start, a_end = a_seg["Start"], a_seg["End"]
             overlap = max(0, min(w_end, a_end) - max(w_start, a_start))
@@ -199,8 +200,10 @@ def align_speaker_labels(whisper_path: str, diarization_path: str, output_dir: s
                 best_speaker = a_seg["Speaker"]
                 best_a_seg = a_seg
 
+        # If a matching speaker segment was found
         if best_speaker and best_a_seg:
             true_start = best_a_seg["Start"] if len(aligned) == 0 else w_start
+            # Add the aligned segment to the result list
             aligned.append({
                 "start": true_start,
                 "end": w_end,
@@ -208,8 +211,10 @@ def align_speaker_labels(whisper_path: str, diarization_path: str, output_dir: s
                 "text": w_seg["text"]
             })
         else:
+            # If no overlap was found, count the segment as discarded
             discarded += 1
 
+    # Save the final transcript
     transcript_path = Path(output_dir) / "transcript.json"
     with transcript_path.open("w", encoding="utf-8") as f:
         json.dump(aligned, f, ensure_ascii=False, indent=2)
@@ -229,7 +234,8 @@ def translate(transcript_path: str, source_language: str, target_language: str, 
         target_language (str):    DeepL target language code (e.g. "DK").
         auth_key (str):           DeepL API authentication key.
     """
-    logger.info("Translating %s from %s → %s via DeepL", transcript_path, source_language, target_language)    
+    logger.info("Translating %s from %s → %s via DeepL", transcript_path, source_language, target_language)
+    # Setup DeepL translator    
     translator = deepl.Translator(auth_key)
     
     # Load the transcript JSON
@@ -274,22 +280,25 @@ def merge_segments(base_dir, max_gap=0.45):
     Writes output transcript to a new JSON file ("transcript_con.json") 
 
     Args:
-        base_dir (Path):    Path to base directory of video (data/processed/video_x).
-        max_gap (float):    Gap between segments with same speaker lower than max_gap will be merged.
+        base_dir (Path):    Path to base directory of video (data/processed/video_x) containing 'transcript.json'..
+        max_gap (float):    Maximum allowed gap (in seconds) between segments with the same speaker to be merged.
     
     Returns:
         str: Path to the final transcript JSON file.
     """
 
+    # Define input- and output paths
     input_path = os.path.join(base_dir, "transcript.json")
     output_path = os.path.join(base_dir, "transcript_con.json")
 
     with open(input_path, "r", encoding="utf-8") as f:
         segments = json.load(f)
 
+    # Initialise merging
     merged_segments = []
     prev = segments[0]
 
+    # Go through and merge segments
     for curr in segments[1:]:
         time_gap = curr["start"] - prev["end"]
         if curr["speaker"] == prev["speaker"] and time_gap < max_gap:
