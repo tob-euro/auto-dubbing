@@ -2,6 +2,7 @@
 data/
 checkpoints/
 seed-vc/
+stat_test.ipynb
 
 # Output
 *.mp4

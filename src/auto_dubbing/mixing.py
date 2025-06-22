@@ -195,4 +195,3 @@ def mix_audio_with_video(video_path: str, audio_path: str, output_video_path: st
 
     logger.info("Dubbed video saved to %s", output_video_path)
     return output_video_path
-
